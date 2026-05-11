@@ -22,6 +22,7 @@ from typing import Optional, List
 print("[STARTUP] All imports complete", flush=True)
 app = Flask(__name__)
 print("[STARTUP] Flask app created", flush=True)
+print(f"[STARTUP] App file: {__file__}", flush=True)
 CONTACTS_FILE = "contacts.json"
 
 # ==================== LLM INITIALIZATION ====================
@@ -1326,7 +1327,7 @@ class PatternRouter:
             # Let WebAgent check if it actually wants to handle it
             result = self.web_agent.handle(command, session)
             # If WebAgent returned something that's not "generic fallback", use it
-            if 'Please specify' not in result and 'fallback' not in result.lower():
+            if result and 'Please specify' not in result and 'fallback' not in result.lower():
                 return result
 
         # Pattern-based routing
@@ -1371,6 +1372,7 @@ def ask():
         command = data.get('command', '').strip()
         session_id = data.get('session_id', str(uuid.uuid4()))
 
+
         if not command:
             return jsonify({'response': 'Please say something.', 'session_id': session_id}), 200
 
@@ -1379,6 +1381,7 @@ def ask():
 
         # Multi-agent routing
         response_text = _router.route(command, session)
+
 
         session['messages'].append({"role": "assistant", "content": response_text})
         response = jsonify({'response': response_text, 'session_id': session_id})
