@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Assistant - Ollama Powered</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1a202c 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #e2e8f0;
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+
+        .chat-panel {
+            background: #1e293b;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #334155;
+        }
+
+        .header {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #f1f5f9;
+            font-size: 28px;
+            margin-bottom: 8px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        h1 svg {
+            width: 32px;
+            height: 32px;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .toggle-btn {
+            padding: 8px 16px;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            background: transparent;
+            color: #667eea;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .toggle-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .status-bar {
+            background: #334155;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #cbd5e1;
+            min-height: 20px;
+            text-align: center;
+            font-weight: 500;
+            border: 1px solid #475569;
+        }
+
+        .status-bar.listening {
+            background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+            color: #93c5fd;
+            font-weight: 600;
+            border-color: #3b82f6;
+        }
+
+        .status-bar.processing {
+            background: linear-gradient(135deg, #b45309 0%, #92400e 100%);
+            color: #fcd34d;
+            font-weight: 600;
+            border-color: #f59e0b;
+        }
+
+        .status-bar.speaking {
+            background: linear-gradient(135deg, #166534 0%, #15803d 100%);
+            color: #86efac;
+            font-weight: 600;
+            border-color: #22c55e;
+        }
+
+        .status-bar.error {
+            background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+            color: #fca5a5;
+            font-weight: 600;
+            border-color: #ef4444;
+        }
+
+        .mic-button {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            cursor: pointer;
+            margin: 0 auto 30px;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .mic-icon {
+            width: 60px;
+            height: 60px;
+            color: white;
+            stroke: white;
+        }
+
+        .mic-button:hover:not(:disabled) {
+            transform: scale(1.1);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+        }
+
+        .mic-button:active:not(:disabled) {
+            transform: scale(0.95);
+        }
+
+        .mic-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .mic-button.recording {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1.5s infinite;
+        }
+
+        .mic-button.recording .mic-icon {
+            color: white;
+            stroke: white;
+            animation: mic-bounce 1s infinite;
+        }
+
+        @keyframes mic-bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 10px 30px rgba(245, 87, 108, 0.4);
+            }
+            50% {
+                box-shadow: 0 10px 50px rgba(245, 87, 108, 0.8);
+            }
+            100% {
+                box-shadow: 0 10px 30px rgba(245, 87, 108, 0.4);
+            }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.8); }
+        }
+
+        @keyframes wave {
+            0%, 100% { height: 4px; }
+            50% { height: 12px; }
+        }
+
+        @keyframes pulse-scale {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+
+        @keyframes slide-right {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .dots-spinner {
+            display: inline-flex;
+            gap: 4px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .dots-spinner span {
+            width: 6px;
+            height: 6px;
+            background: white;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite;
+        }
+
+        .dots-spinner span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .dots-spinner span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        .wave-spinner {
+            display: inline-flex;
+            gap: 3px;
+            margin-right: 8px;
+            vertical-align: middle;
+            align-items: flex-end;
+            height: 14px;
+        }
+
+        .wave-spinner span {
+            width: 3px;
+            height: 4px;
+            background: white;
+            border-radius: 2px;
+            animation: wave 0.8s ease-in-out infinite;
+        }
+
+        .wave-spinner span:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .wave-spinner span:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .wave-spinner span:nth-child(4) {
+            animation-delay: 0.3s;
+        }
+
+        .pulse-spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            background: white;
+            border-radius: 50%;
+            animation: pulse-scale 1.2s ease-in-out infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        .bars-spinner {
+            display: inline-flex;
+            gap: 3px;
+            margin-right: 8px;
+            vertical-align: middle;
+            align-items: center;
+            height: 14px;
+        }
+
+        .bars-spinner span {
+            width: 2px;
+            height: 8px;
+            background: white;
+            border-radius: 1px;
+            animation: wave 1s ease-in-out infinite;
+        }
+
+        .bars-spinner span:nth-child(1) {
+            animation-delay: 0s;
+        }
+
+        .bars-spinner span:nth-child(2) {
+            animation-delay: 0.1s;
+        }
+
+        .bars-spinner span:nth-child(3) {
+            animation-delay: 0.2s;
+        }
+
+        .bars-spinner span:nth-child(4) {
+            animation-delay: 0.3s;
+        }
+
+        .bars-spinner span:nth-child(5) {
+            animation-delay: 0.4s;
+        }
+
+        .approval-dialog {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .approval-dialog.active {
+            display: flex;
+        }
+
+        .approval-content {
+            background: #1e293b;
+            border: 2px solid #667eea;
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+        }
+
+        .approval-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 15px;
+        }
+
+        .approval-details {
+            background: #0f172a;
+            border-left: 3px solid #667eea;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            color: #cbd5e1;
+            font-size: 14px;
+        }
+
+        .approval-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        .approval-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .approval-btn-yes {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+        }
+
+        .approval-btn-yes:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(34, 197, 94, 0.4);
+        }
+
+        .approval-btn-no {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        .approval-btn-no:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(239, 68, 68, 0.4);
+        }
+
+        .chat-area {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 300px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-bubble {
+            display: inline-block;
+            padding: 12px 16px;
+            border-radius: 12px;
+            word-break: break-word;
+            max-width: 85%;
+        }
+
+        .user .message-bubble {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .assistant .message-bubble {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+        }
+
+        .empty-state {
+            color: #64748b;
+            font-size: 14px;
+            padding: 30px 0;
+            text-align: center;
+        }
+
+        .error-message {
+            color: #c62828;
+            font-size: 13px;
+            padding: 10px;
+            background: #ffebee;
+            border-radius: 8px;
+            display: none;
+            margin-bottom: 10px;
+        }
+
+        .dashboard {
+            background: #1e293b;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #334155;
+        }
+
+        .dashboard-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .metric {
+            margin-bottom: 20px;
+        }
+
+        .metric-label {
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 600;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            color: #f1f5f9;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #334155;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+        }
+
+        .metric.warning .progress-fill {
+            background: linear-gradient(90deg, #ff9800 0%, #f57c00 100%);
+        }
+
+        .metric.danger .progress-fill {
+            background: linear-gradient(90deg, #f44336 0%, #e53935 100%);
+        }
+
+        .process-list {
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 11px;
+            background: #0f172a;
+            border-radius: 6px;
+            padding: 8px;
+            border: 1px solid #334155;
+        }
+
+        .process-item {
+            padding: 4px;
+            margin-bottom: 4px;
+            background: #1e293b;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+            border-left: 3px solid #667eea;
+            padding-left: 6px;
+        }
+
+        .process-name {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #cbd5e1;
+        }
+
+        .process-cpu {
+            color: #fbbf24;
+            font-weight: 600;
+            margin-left: 5px;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        @media (max-width: 1024px) {
+            .main-container {
+                grid-template-columns: 1fr;
+            }
+
+            .dashboard {
+                padding: 20px;
+            }
+        }
+
+        .datetime-widget {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .datetime-time {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .datetime-date {
+            font-size: 12px;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 480px) {
+            .chat-panel {
+                padding: 25px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .mic-button {
+                width: 110px;
+                height: 110px;
+                font-size: 50px;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #764ba2;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            align-items: center;
+        }
+
+        .mute-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #94a3b8;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+
+        .mute-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+        }
+
+        .mute-btn svg {
+            width: 14px;
+            height: 14px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Approval Dialog -->
+    <div class="approval-dialog" id="approvalDialog">
+        <div class="approval-content">
+            <div class="approval-title" id="approvalTitle">Confirm Action</div>
+            <div class="approval-details" id="approvalDetails">
+                Please confirm this action.
+            </div>
+            <div class="approval-buttons">
+                <button class="approval-btn approval-btn-no" onclick="respondApproval('no')">No, Cancel</button>
+                <button class="approval-btn approval-btn-yes" onclick="respondApproval('yes')">Yes, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- Chat Panel -->
+        <div class="chat-panel">
+            <div class="header">
+                <h1>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 1a3 3 0 0 0-3 3v12a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                    AI Virtual Assistant
+                </h1>
+                <p class="subtitle">Powered by Ollama llama3.2 (Private & Local)</p>
+            </div>
+
+            <div class="controls">
+                <button class="toggle-btn active" id="continuousToggle" onclick="toggleContinuous()">
+                    ● Continuous On
+                </button>
+                <button class="toggle-btn" id="clearBtn" onclick="clearChat()">
+                    Clear Chat
+                </button>
+            </div>
+
+            <div class="status-bar" id="status">🎤 Ready to listen</div>
+            <div class="error-message" id="errorMsg"></div>
+
+            <button class="mic-button" id="micBtn" title="Click to speak or say 'Stop' to pause">
+                <svg class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v12a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    <line x1="12" y1="19" x2="12" y2="23"></line>
+                    <line x1="8" y1="23" x2="16" y2="23"></line>
+                </svg>
+            </button>
+
+            <div class="chat-area" id="chatArea">
+                <div class="empty-state">Click the mic or start speaking to begin...</div>
+            </div>
+        </div>
+
+        <!-- System Dashboard -->
+        <div class="dashboard">
+            <div class="datetime-widget">
+                <div class="datetime-time" id="currentTime">--:--:--</div>
+                <div class="datetime-date" id="currentDate">-- -- --</div>
+            </div>
+
+            <div class="dashboard-title">📊 System Monitor</div>
+
+            <div class="metric" id="cpuMetric">
+                <div class="metric-label">CPU Usage</div>
+                <div class="metric-value"><span id="cpuValue">--</span>%</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="cpuBar" style="width: 0%"></div>
+                </div>
+                <div class="metric-label" style="margin-top: 5px; font-size: 10px;">Cores: <span id="cpuCores">--</span></div>
+            </div>
+
+            <div class="metric" id="ramMetric">
+                <div class="metric-label">Memory (RAM)</div>
+                <div class="metric-value"><span id="ramValue">--</span> / <span id="ramTotal">--</span> GB</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="ramBar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="metric" id="diskMetric">
+                <div class="metric-label">Disk Space</div>
+                <div class="metric-value"><span id="diskValue">--</span> / <span id="diskTotal">--</span> GB</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="diskBar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="metric">
+                <div class="metric-label">Top Processes</div>
+                <div class="process-list" id="processList">
+                    <div style="color: #999; text-align: center; padding: 20px;">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const micBtn = document.getElementById('micBtn');
+        const chatArea = document.getElementById('chatArea');
+        const statusBar = document.getElementById('status');
+        const errorMsg = document.getElementById('errorMsg');
+        const continuousToggle = document.getElementById('continuousToggle');
+        const approvalDialog = document.getElementById('approvalDialog');
+
+        let pendingApprovalCommand = null;
+        let pendingApprovalSession = null;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.continuous = false;
+        recognition.interimResults = false;
+
+        const synth = window.speechSynthesis;
+
+        let isListening = false;
+        let continuousMode = true;
+        let shouldAutoRestart = false;  // Don't auto-start on page load
+        let isSpeaking = false;
+
+        // PREVENT AUTO-LISTENING ON PAGE LOAD
+        window.addEventListener('load', () => {
+            isListening = false;
+            isSpeaking = false;
+            micBtn.classList.remove('recording');
+            statusBar.innerHTML = '🎤 Ready - Click microphone to start';
+            statusBar.className = 'status-bar';
+            errorMsg.style.display = 'none';
+        });
+
+        // Request microphone permission
+        function requestMicPermission() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    // Permission granted, stop the stream
+                    stream.getTracks().forEach(track => track.stop());
+                    statusBar.innerHTML = '✓ Mic permission granted';
+                })
+                .catch(err => {
+                    statusBar.className = 'status-bar error';
+                    statusBar.innerHTML = '❌ Microphone permission denied';
+                    errorMsg.textContent = 'Please allow microphone access in your browser settings.';
+                    errorMsg.style.display = 'block';
+                });
+        }
+
+        // Mic button click
+        micBtn.addEventListener('click', () => {
+            if (isListening) {
+                recognition.stop();
+                return;
+            }
+
+            if (chatArea.querySelector('.empty-state')) {
+                chatArea.innerHTML = '';
+            }
+
+            isListening = true;
+            shouldAutoRestart = continuousMode;
+            micBtn.classList.add('recording');
+            statusBar.className = 'status-bar listening';
+            statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is listening...';
+            errorMsg.style.display = 'none';
+
+            try {
+                recognition.start();
+            } catch (err) {
+                console.error('Recognition error:', err);
+                statusBar.className = 'status-bar error';
+                statusBar.innerHTML = '❌ Mic error';
+                errorMsg.textContent = 'Microphone not available. Check permissions.';
+                errorMsg.style.display = 'block';
+                isListening = false;
+                micBtn.classList.remove('recording');
+            }
+        });
+
+        recognition.onstart = () => {
+            console.log('Speech recognition started');
+        };
+
+        recognition.onresult = (event) => {
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                transcript += event.results[i][0].transcript;
+            }
+
+            if (transcript) {
+                addMessage('user', transcript);
+                processCommand(transcript);
+            }
+        };
+
+        recognition.onerror = (event) => {
+            isListening = false;
+            micBtn.classList.remove('recording');
+            statusBar.className = 'status-bar error';
+            statusBar.innerHTML = `❌ Error: ${event.error}`;
+
+            let errorText = '';
+            if (event.error === 'no-speech') {
+                errorText = 'No speech detected. Please speak louder or check your microphone.';
+            } else if (event.error === 'network') {
+                errorText = 'Network error. Check your internet connection.';
+            } else if (event.error === 'not-allowed') {
+                errorText = 'Microphone permission denied. Please enable it in browser settings.';
+            } else if (event.error === 'permission-denied') {
+                errorText = 'Microphone permission denied. Click the mic again to try again.';
+            } else {
+                errorText = `Mic error: ${event.error}. Try clicking the mic button again.`;
+            }
+
+            errorMsg.textContent = errorText;
+            errorMsg.style.display = 'block';
+        };
+
+        recognition.onend = () => {
+            isListening = false;
+            micBtn.classList.remove('recording');
+
+            // Don't auto-restart unless explicitly told to (after speaking in continuous mode)
+            if (!isSpeaking) {
+                statusBar.className = 'status-bar';
+                statusBar.innerHTML = '🎤 Ready - Click microphone to start';
+            }
+        };
+
+        function startListening() {
+            // Start listening if not already listening and not speaking
+            if (!isListening && !isSpeaking) {
+                isListening = true;
+                micBtn.classList.add('recording');
+                statusBar.className = 'status-bar listening';
+                statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is listening...';
+                recognition.start();
+            }
+        }
+
+        async function processCommand(command, approval = null, sessionId = null) {
+            // Stop listening immediately
+            recognition.stop();
+            isListening = false;
+
+            statusBar.className = 'status-bar processing';
+            statusBar.innerHTML = '<span class="spinner"></span>Assistant is thinking...';
+
+            try {
+                const payload = { command };
+                if (approval) payload.approval = approval;
+                if (sessionId) payload.session_id = sessionId;
+
+                const response = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                const responseText = data.response;
+
+                // Handle approval required
+                if (data.requires_approval) {
+                    addMessage('assistant', responseText);
+                    pendingApprovalCommand = command;
+                    pendingApprovalSession = data.session_id;
+
+                    // Show approval dialog based on type
+                    let title = 'Confirm Action';
+                    let details = responseText;
+                    let urgency = '';
+
+                    if (data.approval_type === 'whatsapp_send') {
+                        title = '📱 Send WhatsApp Message?';
+                        details = `<strong>To:</strong> ${data.approval_details.contact}<br><strong>Message:</strong> "${data.approval_details.message}"`;
+                    } else if (data.approval_type === 'email_send') {
+                        title = '📧 Send Email?';
+                        details = `<strong>To:</strong> ${data.approval_details.recipient}<br><strong>Subject:</strong> ${data.approval_details.subject}<br><strong>Message:</strong> "${data.approval_details.message}"`;
+                    } else if (data.approval_type === 'file_delete') {
+                        title = '⚠️ DELETE FILE - PERMANENT!';
+                        details = `<strong style="color: #fca5a5;">This action CANNOT be undone!</strong><br><strong>Path:</strong> ${data.approval_details.file_path}`;
+                        urgency = 'danger';
+                    } else if (data.approval_type === 'system_restart') {
+                        title = '⚠️ RESTART COMPUTER?';
+                        details = `<strong style="color: #fca5a5;">All unsaved work will be lost!</strong><br>The computer will restart immediately.`;
+                        urgency = 'danger';
+                    } else if (data.approval_type === 'system_shutdown') {
+                        title = '⚠️ SHUTDOWN COMPUTER?';
+                        details = `<strong style="color: #fca5a5;">All unsaved work will be lost!</strong><br>The computer will shut down immediately.`;
+                        urgency = 'danger';
+                    }
+
+                    showApprovalDialog(title, details, urgency);
+                    return;
+                }
+
+                addMessage('assistant', responseText);
+
+                // Detect what the agent is doing based on response text
+                const lowerResponse = responseText.toLowerCase();
+
+                if (lowerResponse.includes('playing') || lowerResponse.includes('youtube')) {
+                    statusBar.className = 'status-bar processing';
+                    statusBar.innerHTML = '<span class="bars-spinner"><span></span><span></span><span></span><span></span><span></span></span>Assistant is playing on YouTube...';
+                    setTimeout(() => {
+                        statusBar.className = 'status-bar speaking';
+                        statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                        speakText(responseText);
+                    }, 1500);
+                } else if (lowerResponse.includes('search') || lowerResponse.includes('searching') || lowerResponse.includes('found')) {
+                    statusBar.className = 'status-bar processing';
+                    statusBar.innerHTML = '<span class="bars-spinner"><span></span><span></span><span></span><span></span><span></span></span>Assistant is searching the web...';
+                    setTimeout(() => {
+                        statusBar.className = 'status-bar speaking';
+                        statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                        speakText(responseText);
+                    }, 1000);
+                } else if (lowerResponse.includes('whatsapp') || lowerResponse.includes('message sent') || lowerResponse.includes('sending')) {
+                    statusBar.className = 'status-bar processing';
+                    statusBar.innerHTML = '<span class="pulse-spinner"></span>Assistant is sending message...';
+                    setTimeout(() => {
+                        statusBar.className = 'status-bar speaking';
+                        statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                        speakText(responseText);
+                    }, 1200);
+                } else if (lowerResponse.includes('system') || lowerResponse.includes('cpu') || lowerResponse.includes('memory') || lowerResponse.includes('disk')) {
+                    statusBar.className = 'status-bar processing';
+                    statusBar.innerHTML = '<span class="spinner"></span>Assistant is fetching system info...';
+                    updateDashboardHighlight();
+                    setTimeout(() => {
+                        statusBar.className = 'status-bar speaking';
+                        statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                        speakText(responseText);
+                    }, 800);
+                } else if (lowerResponse.includes('weather') || lowerResponse.includes('temperature') || lowerResponse.includes('condition')) {
+                    statusBar.className = 'status-bar processing';
+                    statusBar.innerHTML = '<span class="pulse-spinner"></span>Assistant is fetching weather...';
+                    setTimeout(() => {
+                        statusBar.className = 'status-bar speaking';
+                        statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                        speakText(responseText);
+                    }, 800);
+                } else if (lowerResponse.includes('news') || lowerResponse.includes('headline')) {
+                    statusBar.className = 'status-bar processing';
+                    statusBar.innerHTML = '<span class="bars-spinner"><span></span><span></span><span></span><span></span><span></span></span>Assistant is fetching news...';
+                    setTimeout(() => {
+                        statusBar.className = 'status-bar speaking';
+                        statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                        speakText(responseText);
+                    }, 800);
+                } else {
+                    // Default: just speak the response
+                    statusBar.className = 'status-bar speaking';
+                    statusBar.innerHTML = '<span class="wave-spinner"><span></span><span></span><span></span><span></span></span>Assistant is speaking...';
+                    speakText(responseText);
+                }
+            } catch (err) {
+                statusBar.className = 'status-bar error';
+                statusBar.innerHTML = '❌ Error occurred';
+                errorMsg.textContent = 'Failed to process command. Make sure the server and Ollama are running.';
+                errorMsg.style.display = 'block';
+                console.error(err);
+                isSpeaking = false;
+            }
+        }
+
+        function addMessage(sender, text) {
+            if (chatArea.querySelector('.empty-state')) {
+                chatArea.innerHTML = '';
+            }
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}`;
+
+            let msgHTML = `<div class="message-bubble">${escapeHtml(text)}</div>`;
+
+            // Add mute button for assistant messages
+            if (sender === 'assistant') {
+                msgHTML += `
+                    <div class="message-actions">
+                        <button class="mute-btn" onclick="muteMessage(this)" title="Mute this response">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                <line x1="23" y1="9" x2="17" y2="15"></line>
+                                <line x1="17" y1="9" x2="23" y2="15"></line>
+                            </svg>
+                            Mute
+                        </button>
+                    </div>
+                `;
+            }
+
+            msgDiv.innerHTML = msgHTML;
+            chatArea.appendChild(msgDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function muteMessage(btn) {
+            // Stop any ongoing speech
+            synth.cancel();
+            isSpeaking = false;
+
+            // Update button text
+            btn.textContent = '✓ Muted';
+            btn.disabled = true;
+
+            // Reset button after 2 seconds
+            setTimeout(() => {
+                btn.textContent = '🔇 Mute';
+                btn.disabled = false;
+            }, 2000);
+
+            // Update status
+            statusBar.className = 'status-bar';
+            statusBar.innerHTML = '🔇 Speech muted';
+        }
+
+        function showApprovalDialog(title, details, urgency = '') {
+            const titleEl = document.getElementById('approvalTitle');
+            const detailsEl = document.getElementById('approvalDetails');
+            const content = document.querySelector('.approval-content');
+
+            titleEl.innerHTML = title;
+            detailsEl.innerHTML = details;
+
+            // Change styling based on urgency
+            if (urgency === 'danger') {
+                content.style.borderColor = '#ef4444';
+                detailsEl.style.borderLeftColor = '#ef4444';
+                detailsEl.style.backgroundColor = '#7f1d1d';
+            } else {
+                content.style.borderColor = '#667eea';
+                detailsEl.style.borderLeftColor = '#667eea';
+                detailsEl.style.backgroundColor = '#0f172a';
+            }
+
+            approvalDialog.classList.add('active');
+        }
+
+        function hideApprovalDialog() {
+            approvalDialog.classList.remove('active');
+        }
+
+        function respondApproval(response) {
+            hideApprovalDialog();
+            if (pendingApprovalCommand && pendingApprovalSession) {
+                // Re-submit the command with approval response
+                processCommand(pendingApprovalCommand, response, pendingApprovalSession);
+                pendingApprovalCommand = null;
+                pendingApprovalSession = null;
+            }
+        }
+
+        function speakText(text) {
+            // Stop listening while speaking
+            recognition.stop();
+            isListening = false;
+            isSpeaking = true;
+            synth.cancel();
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.95;
+            utterance.pitch = 1;
+
+            utterance.onstart = () => {
+                isSpeaking = true;
+            };
+
+            utterance.onend = () => {
+                isSpeaking = false;
+
+                if (continuousMode) {
+                    // Resume listening after speaking finishes (after 1 second)
+                    statusBar.className = 'status-bar listening';
+                    statusBar.innerHTML = '<span class="pulse-spinner"></span>Resuming in 1 second...';
+                    setTimeout(() => {
+                        if (continuousMode && !isListening && !isSpeaking) {
+                            startListening();
+                        }
+                    }, 1000);
+                } else {
+                    // Non-continuous mode: show ready status, wait for user click
+                    statusBar.className = 'status-bar';
+                    statusBar.innerHTML = '✓ Ready - Click mic to continue';
+                }
+            };
+
+            synth.speak(utterance);
+        }
+
+        function toggleContinuous() {
+            continuousMode = !continuousMode;
+            continuousToggle.classList.toggle('active');
+            continuousToggle.textContent = continuousMode ? '● Continuous On' : '○ Continuous Off';
+
+            if (continuousMode && !isListening) {
+                statusBar.className = 'status-bar';
+                statusBar.innerHTML = '✓ Continuous mode enabled. Click mic to start.';
+            }
+        }
+
+        function clearChat() {
+            chatArea.innerHTML = '<div class="empty-state">Click the mic or start speaking to begin...</div>';
+            synth.cancel();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateDashboardHighlight() {
+            document.querySelector('.dashboard').style.animation = 'none';
+            setTimeout(() => {
+                document.querySelector('.dashboard').style.animation = 'pulse-highlight 1s ease';
+            }, 10);
+        }
+
+        // Update date and time every second
+        function updateDateTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+
+            document.getElementById('currentTime').textContent = `${hours}:${minutes}:${seconds}`;
+
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const dayName = days[now.getDay()];
+            const monthName = months[now.getMonth()];
+            const date = now.getDate();
+            const year = now.getFullYear();
+
+            document.getElementById('currentDate').textContent = `${dayName}, ${monthName} ${date}, ${year}`;
+        }
+
+        // Update date/time every second
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+
+        // System monitoring
+        async function updateSystemInfo() {
+            try {
+                const response = await fetch('/api/system');
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error('System info error:', data.error);
+                    return;
+                }
+
+                // Update CPU
+                const cpuPercent = data.cpu.percent;
+                document.getElementById('cpuValue').textContent = cpuPercent.toFixed(1);
+                document.getElementById('cpuCores').textContent = data.cpu.cores;
+                document.getElementById('cpuBar').style.width = cpuPercent + '%';
+                updateMetricClass('cpuMetric', cpuPercent);
+
+                // Update RAM
+                const ramPercent = data.memory.percent;
+                document.getElementById('ramValue').textContent = data.memory.used;
+                document.getElementById('ramTotal').textContent = data.memory.total;
+                document.getElementById('ramBar').style.width = ramPercent + '%';
+                updateMetricClass('ramMetric', ramPercent);
+
+                // Update Disk
+                const diskPercent = data.disk.percent;
+                document.getElementById('diskValue').textContent = data.disk.used;
+                document.getElementById('diskTotal').textContent = data.disk.total;
+                document.getElementById('diskBar').style.width = diskPercent + '%';
+                updateMetricClass('diskMetric', diskPercent);
+
+                // Update Processes
+                const processList = document.getElementById('processList');
+                if (data.processes && data.processes.length > 0) {
+                    processList.innerHTML = data.processes.map(proc => `
+                        <div class="process-item">
+                            <span class="process-name">${proc.name}</span>
+                            <span class="process-cpu">${proc.cpu_percent.toFixed(1)}%</span>
+                        </div>
+                    `).join('');
+                } else {
+                    processList.innerHTML = '<div style="color: #999; text-align: center; padding: 10px;">No processes</div>';
+                }
+            } catch (err) {
+                console.error('Failed to fetch system info:', err);
+            }
+        }
+
+        function updateMetricClass(metricId, percent) {
+            const metric = document.getElementById(metricId);
+            metric.classList.remove('warning', 'danger');
+
+            if (percent > 80) {
+                metric.classList.add('danger');
+            } else if (percent > 60) {
+                metric.classList.add('warning');
+            }
+        }
+
+        // Update system info every 3 seconds
+        setInterval(updateSystemInfo, 3000);
+        updateSystemInfo();
+    </script>
+</body>
+</html>
