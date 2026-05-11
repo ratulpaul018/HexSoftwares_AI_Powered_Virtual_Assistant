@@ -133,8 +133,9 @@ def open_website(url: str, get_info: bool = True) -> str:
     except Exception as e:
         return f"✗ Could not open website: {str(e)}"
 
-def open_application(app_name: str) -> str:
-    """Open an application on the system. Comprehensively searches for Windows apps, web services, and installed programs."""
+def smart_open_app(app_name: str) -> str:
+    """Open an application using multi-strategy discovery with fuzzy matching."""
+    import difflib
     try:
         app_map = {
             # Web services
@@ -187,15 +188,24 @@ def open_application(app_name: str) -> str:
 
         app_lower = app_name.lower().strip()
 
-        # Check if it's a web service
-        if app_lower in app_map and app_map[app_lower].startswith('https://'):
-            return open_website(app_map[app_lower], get_info=False)
-
-        # Get target from map or use app_name directly
-        target = app_map.get(app_lower, app_name)
+        # Layer 0: Exact match in app_map
+        if app_lower in app_map:
+            target = app_map[app_lower]
+            if target.startswith('https://'):
+                return open_website(target, get_info=False)
+            # For other targets, fall through to execution logic
+        else:
+            # Layer 0b: Fuzzy match in app_map
+            close = difflib.get_close_matches(app_lower, app_map.keys(), n=1, cutoff=0.75)
+            if close:
+                target = app_map[close[0]]
+                if target.startswith('https://'):
+                    return open_website(target, get_info=False)
+            else:
+                target = app_name
 
         # Handle protocol handlers (ms-settings:, whatsapp:, etc.)
-        if target.endswith(':'):
+        if isinstance(target, str) and target.endswith(':'):
             try:
                 subprocess.Popen(f'explorer "{target}"')
                 return f"✓ Opened {app_name}"
@@ -212,6 +222,51 @@ def open_application(app_name: str) -> str:
             return f"✓ Opened {app_name}"
         except:
             pass
+
+        # Layer 1: Windows Registry App Paths
+        try:
+            ps_cmd = (
+                r"Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\*' "
+                r"-ErrorAction SilentlyContinue | "
+                r"Where-Object {$_.PSChildName -like '*" + app_lower.split()[0] + r"*'} | "
+                r"Select-Object -ExpandProperty '(default)' -First 1"
+            )
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', ps_cmd],
+                capture_output=True, text=True, timeout=8
+            )
+            if result.stdout.strip():
+                subprocess.Popen(result.stdout.strip(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return f"✓ Opened {app_name}"
+        except Exception:
+            pass
+
+        # Layer 2: Start Menu .lnk scan with fuzzy matching
+        start_menu_paths = [
+            os.path.join(os.environ.get('APPDATA', ''), r'Microsoft\Windows\Start Menu\Programs'),
+            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs'
+        ]
+        candidates = []
+        for base in start_menu_paths:
+            if os.path.isdir(base):
+                try:
+                    for root, _, files in os.walk(base):
+                        for f in files:
+                            if f.lower().endswith('.lnk'):
+                                candidates.append(os.path.join(root, f))
+                except:
+                    pass
+
+        if candidates:
+            lnk_names = [os.path.splitext(os.path.basename(c))[0].lower() for c in candidates]
+            close_lnk = difflib.get_close_matches(app_lower, lnk_names, n=1, cutoff=0.6)
+            if close_lnk:
+                idx = lnk_names.index(close_lnk[0])
+                try:
+                    os.startfile(candidates[idx])
+                    return f"✓ Opened {app_name} (via Start Menu)"
+                except Exception:
+                    pass
 
         # Method 2: Try with 'where' command to find in PATH
         try:
@@ -237,7 +292,10 @@ def open_application(app_name: str) -> str:
                     for file in files:
                         if file.lower().startswith(target.lower().split()[0]) and file.lower().endswith(('.exe', '.lnk')):
                             full_path = os.path.join(root, file)
-                            subprocess.Popen(full_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            try:
+                                os.startfile(full_path) if file.endswith('.lnk') else subprocess.Popen(full_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            except:
+                                pass
                             return f"✓ Opened {app_name}"
             except:
                 continue
@@ -257,6 +315,8 @@ def open_application(app_name: str) -> str:
         return f"✗ Could not open '{app_name}': Application not found on this system. Try installing the application or check the spelling."
     except Exception as e:
         return f"✗ Error opening application: {str(e)}"
+
+open_application = smart_open_app
 
 def create_folder(path: str = None, folder_name: str = None) -> str:
     """Create a new folder. Use this when user wants to make a folder."""
@@ -828,12 +888,458 @@ def get_news() -> str:
     except Exception as e:
         return f"✗ Could not fetch news: {str(e)}"
 
-# ==================== TOOL SETS FOR 4 AGENTS ====================
+def get_battery_status() -> str:
+    """Get detailed battery status using psutil."""
+    try:
+        battery = psutil.sensors_battery()
+        if battery is None:
+            return "🔌 No battery detected. This system runs on AC power only."
+
+        percent = battery.percent
+        plugged = battery.power_plugged
+        secs_left = battery.secsleft
+
+        status = "Charging" if plugged else "Discharging"
+
+        if secs_left == psutil.POWER_TIME_UNLIMITED:
+            time_str = "Fully charged / AC powered"
+        elif secs_left == psutil.POWER_TIME_UNKNOWN:
+            time_str = "Calculating..."
+        else:
+            hours = secs_left // 3600
+            minutes = (secs_left % 3600) // 60
+            time_str = f"{hours}h {minutes}m remaining"
+
+        bar_filled = int(percent / 10)
+        bar = "█" * bar_filled + "░" * (10 - bar_filled)
+
+        icon = "🔌" if plugged else ("🔋" if percent > 20 else "🪫")
+
+        return (
+            f"{icon} Battery Status:\n"
+            f"  Charge: [{bar}] {percent:.1f}%\n"
+            f"  Status: {status}\n"
+            f"  Time: {time_str}"
+        )
+    except Exception as e:
+        return f"Could not get battery status: {str(e)}"
+
+def get_network_status() -> str:
+    """Get network connection details including IP, adapter, and I/O counters."""
+    try:
+        lines = []
+
+        addrs = psutil.net_if_addrs()
+        stats = psutil.net_if_stats()
+
+        active_interfaces = []
+        for iface, addr_list in addrs.items():
+            iface_stats = stats.get(iface)
+            if iface_stats and iface_stats.isup:
+                for addr in addr_list:
+                    if addr.family == 2 and not addr.address.startswith("127."):
+                        active_interfaces.append((iface, addr.address))
+
+        if active_interfaces:
+            lines.append("🌐 Active Network Interfaces:")
+            for iface, ip in active_interfaces:
+                lines.append(f"  • {iface}: {ip}")
+        else:
+            lines.append("⚠️  No active network connections detected.")
+
+        io = psutil.net_io_counters()
+        sent_mb = io.bytes_sent / (1024 ** 2)
+        recv_mb = io.bytes_recv / (1024 ** 2)
+        lines.append(f"\n📊 Data Since Boot:")
+        lines.append(f"  Sent:     {sent_mb:.1f} MB")
+        lines.append(f"  Received: {recv_mb:.1f} MB")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Could not get network status: {str(e)}"
+
+def get_running_processes(top_n: int = 8) -> str:
+    """Return the top CPU and RAM consuming processes."""
+    try:
+        procs = []
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                info = proc.info
+                if info['cpu_percent'] is not None and info['memory_percent'] is not None:
+                    procs.append(info)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        top_cpu = sorted(procs, key=lambda x: x['cpu_percent'], reverse=True)[:top_n // 2]
+        top_ram = sorted(procs, key=lambda x: x['memory_percent'], reverse=True)[:top_n // 2]
+
+        lines = ["⚙️  Running Processes:\n"]
+        lines.append("  Top CPU:")
+        for p in top_cpu:
+            lines.append(f"    [{p['pid']:>6}] {p['name']:<30} CPU: {p['cpu_percent']:>5.1f}%")
+        lines.append("\n  Top RAM:")
+        for p in top_ram:
+            lines.append(f"    [{p['pid']:>6}] {p['name']:<30} RAM: {p['memory_percent']:>5.1f}%")
+
+        return "\n".join(lines)
+    except Exception as e:
+        return f"Could not get processes: {str(e)}"
+
+def web_search_with_content(query: str) -> str:
+    """Search DuckDuckGo, fetch the top result's page content, and return both."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        search_url = f"https://duckduckgo.com/html/?q={requests.utils.quote(query)}"
+        resp = requests.get(search_url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.content, 'html.parser')
+
+        links = []
+        for a in soup.select('a.result__a')[:5]:
+            title = a.get_text(strip=True)
+            href = a.get('href', '')
+            if 'uddg=' in href:
+                from urllib.parse import urlparse, parse_qs
+                real_url = parse_qs(urlparse(href).query).get('uddg', [href])[0]
+            else:
+                real_url = href
+            if title and real_url:
+                links.append((title, real_url))
+
+        result_lines = [f"🔍 Search results for '{query}':"]
+        for i, (title, url) in enumerate(links, 1):
+            result_lines.append(f"  {i}. {title}\n     {url}")
+
+        if links:
+            top_url = links[0][1]
+            try:
+                page_resp = requests.get(top_url, headers=headers, timeout=12)
+                page_soup = BeautifulSoup(page_resp.content, 'html.parser')
+                for tag in page_soup(["script", "style", "nav", "footer", "header"]):
+                    tag.decompose()
+
+                paras = [p.get_text(strip=True) for p in page_soup.find_all('p') if len(p.get_text(strip=True)) > 40]
+                excerpt = ' '.join(paras[:4])[:800]
+
+                if excerpt:
+                    result_lines.append(f"\n📄 Top result summary ({links[0][0]}):")
+                    result_lines.append(f"  {excerpt}")
+            except Exception:
+                pass
+
+        return "\n".join(result_lines) if links else f"No results found for '{query}'"
+    except Exception as e:
+        return f"Search failed: {str(e)}"
+
+def search_and_get_top_url(query: str) -> tuple:
+    """Return Google search URL for the query (simple, reliable approach)."""
+    search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
+    return (search_url, f"Search: {query}")
+
+# ==================== AGENT CLASSES ====================
+
+class SystemAgent:
+    """Handles OS/hardware: battery, network, processes, wifi, bluetooth, volume, brightness, etc."""
+
+    def handle(self, command: str, session: dict) -> str:
+        cmd = command.lower()
+
+        if any(w in cmd for w in ('battery', 'charge', 'charging', 'power level')):
+            return get_battery_status()
+
+        if any(w in cmd for w in ('network status', 'network info', 'ip address', 'connection status', 'internet status')):
+            return get_network_status()
+
+        if any(w in cmd for w in ('process', 'running apps', 'running programs', 'what is running', 'task list')):
+            return get_running_processes()
+
+        if any(w in cmd for w in ('system info', 'cpu', 'ram', 'memory', 'disk', 'storage')):
+            return get_system_info()
+
+        if 'wifi' in cmd or 'wi-fi' in cmd or 'wireless' in cmd:
+            action = 'turn on' if any(w in cmd for w in ('on', 'enable')) else 'turn off'
+            return control_wifi(action)
+
+        if 'bluetooth' in cmd:
+            action = 'turn on' if any(w in cmd for w in ('on', 'enable')) else 'turn off'
+            return control_bluetooth(action)
+
+        if 'volume' in cmd:
+            numbers = re.findall(r'\d+', command)
+            level = int(numbers[0]) if numbers else 50
+            return set_volume(str(level))
+
+        if 'brightness' in cmd:
+            numbers = re.findall(r'\d+', command)
+            level = int(numbers[0]) if numbers else 50
+            return set_brightness(str(level))
+
+        if 'wallpaper' in cmd or 'background' in cmd:
+            return change_wallpaper()
+
+        if 'update' in cmd or 'windows update' in cmd:
+            return check_windows_updates()
+
+        return get_system_info()
 
 
-# Tool definitions not needed - using simple if/elif routing in /api/ask endpoint
-print("[STARTUP] Tools initialized - 2am version")
+class AppAgent:
+    """Handles opening applications and files via smart discovery."""
 
+    def handle(self, command: str, session: dict) -> str:
+        cmd = command.lower()
+
+        for prefix in ('open app', 'launch', 'start', 'open', 'run'):
+            if cmd.startswith(prefix) or f' {prefix} ' in cmd:
+                app_name = re.sub(
+                    r'\b(open|launch|start|run|app|application)\b', '',
+                    cmd, flags=re.IGNORECASE
+                ).strip()
+                if app_name:
+                    return smart_open_app(app_name)
+
+        app_name = re.sub(
+            r'\b(open|launch|start|run|the|app|application|please)\b',
+            '', command, flags=re.IGNORECASE
+        ).strip()
+
+        return smart_open_app(app_name) if app_name else "Please specify an application name."
+
+
+class WebAgent:
+    """Handles web search, opening websites, fetching content."""
+
+    SITE_MAP = {
+        'google': 'https://google.com',
+        'youtube': 'https://youtube.com',
+        'github': 'https://github.com',
+        'gmail': 'https://gmail.com',
+        'twitter': 'https://twitter.com',
+        'x': 'https://x.com',
+        'facebook': 'https://facebook.com',
+        'instagram': 'https://instagram.com',
+        'reddit': 'https://reddit.com',
+        'wikipedia': 'https://wikipedia.org',
+        'linkedin': 'https://linkedin.com',
+        'amazon': 'https://amazon.com',
+        'netflix': 'https://netflix.com',
+        'chatgpt': 'https://chat.openai.com',
+        'stackoverflow': 'https://stackoverflow.com',
+        'stack overflow': 'https://stackoverflow.com',
+    }
+
+    def handle(self, command: str, session: dict) -> str:
+        cmd = command.lower()
+
+        # Check for URLs/domains in command (for "open <url>" pattern)
+        url_pattern = re.search(r'(https?://\S+|www\.\S+|\b[a-z0-9\-]+\.[a-z]{2,}(?:\.[a-z]{2})?(?:/\S*)?)', cmd)
+
+        # Check for website opening pattern: "open ... website/site"
+        website_pattern = re.search(r'\b(open|go to|visit|navigate to|open site|open url).+(website|site)\b', cmd)
+        if website_pattern or any(w in cmd for w in ('open website', 'go to', 'visit', 'navigate to', 'open site', 'open url')):
+            site = re.sub(
+                r'\b(open|website|site|go|to|visit|navigate|the|please|url)\b',
+                '', cmd, flags=re.IGNORECASE
+            ).strip()
+
+            if site in self.SITE_MAP:
+                return open_website(self.SITE_MAP[site])
+
+            import difflib
+            close = difflib.get_close_matches(site, self.SITE_MAP.keys(), n=1, cutoff=0.7)
+            if close:
+                return open_website(self.SITE_MAP[close[0]])
+
+            # Try to search for the unknown website and open top result
+            if site:
+                top_url, title = search_and_get_top_url(site)
+                if top_url:
+                    open_website(top_url)
+                    return f"✓ Opened: {title}\n  {top_url}"
+                return f"Could not find a website for '{site}'. Try being more specific."
+            return "Please specify a website."
+
+        # If URL/domain found in command, open it
+        if url_pattern:
+            url = url_pattern.group(0)
+            if any(w in cmd for w in ('open', 'go', 'visit', 'navigate', 'check', 'browse')):
+                return open_website(url)
+
+        if 'fetch' in cmd or 'get info from' in cmd or 'info about' in cmd:
+            url_match = re.search(r'(https?://\S+|\b\w+\.\w{2,}\S*)', command)
+            if url_match:
+                return fetch_website_info(url_match.group(0))
+
+        if 'scrape' in cmd:
+            url_match = re.search(r'(https?://\S+|\b\w+\.\w{2,}\S*)', command)
+            if url_match:
+                return scrape_website_content(url_match.group(0))
+
+        query = re.sub(
+            r'\b(search|find|look up|google|web|internet|online|for|about|open|go|visit)\b',
+            '', command, flags=re.IGNORECASE
+        ).strip()
+
+        return web_search_with_content(query) if query else "Please specify a search query."
+
+
+class InfoAgent:
+    """Handles time, date, weather, news, Wikipedia, files, and LLM conversation."""
+
+    def handle(self, command: str, session: dict) -> str:
+        cmd = command.lower()
+
+        if any(w in cmd for w in ('time', 'what time', 'current time')):
+            return get_time()
+
+        if any(w in cmd for w in ('date', 'what day', 'today', 'current date')):
+            return get_date()
+
+        if any(w in cmd for w in ('weather', 'temperature', 'climate', 'rain', 'forecast')):
+            return get_weather()
+
+        if any(w in cmd for w in ('news', 'headline', 'current events', 'latest news')):
+            return get_news()
+
+        if any(w in cmd for w in ('play', 'youtube', 'music', 'song', 'video')):
+            query = re.sub(
+                r'\b(play|on|youtube|music|song|video|watch)\b', '',
+                command, flags=re.IGNORECASE
+            ).strip()
+            return play_youtube(query or 'music')
+
+        if any(w in cmd for w in ('wikipedia', 'who is', 'what is', 'tell me about', 'explain')):
+            query = re.sub(
+                r'\b(wikipedia|who|what|is|are|tell|me|about|explain|the)\b',
+                '', command, flags=re.IGNORECASE
+            ).strip()
+            return search_wikipedia(query) if query else "What would you like to know?"
+
+        if any(w in cmd for w in ('create folder', 'make folder', 'new folder')):
+            name = re.sub(r'\b(create|make|new|folder)\b', '', cmd).strip()
+            return create_folder(str(os.path.expanduser('~/Desktop')), name or 'NewFolder')
+
+        if any(w in cmd for w in ('list files', 'show files', 'what files')):
+            return list_files(str(os.path.expanduser('~/Desktop')))
+
+        if 'read file' in cmd:
+            path = cmd.replace('read file', '').strip()
+            return read_file(path) if path else "Please specify a file path."
+
+        if any(w in cmd for w in ('delete file', 'delete folder', 'remove file')):
+            path = re.sub(r'\b(delete|remove|file|folder)\b', '', cmd).strip()
+            return delete_file(path) if path else "Please specify what to delete."
+
+        return self._llm_respond(command, session)
+
+    def _llm_respond(self, command: str, session: dict) -> str:
+        llm = get_active_llm()
+        if not llm:
+            return (
+                f"I'm not sure how to help with that. "
+                f"Try: 'what time is it', 'search for X', 'open Chrome', "
+                f"'battery status', or 'weather'."
+            )
+
+        try:
+            from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+            history = session.get('messages', [])[-6:]
+            messages = [SystemMessage(content=(
+                "You are a helpful desktop AI assistant. "
+                "Answer concisely in 1-3 sentences."
+            ))]
+            for msg in history[:-1]:
+                if msg['role'] == 'user':
+                    messages.append(HumanMessage(content=msg['content']))
+                else:
+                    messages.append(AIMessage(content=msg['content']))
+            messages.append(HumanMessage(content=command))
+
+            response = llm.invoke(messages)
+            return response.content
+        except Exception as e:
+            return f"I encountered an error processing your request: {str(e)}"
+
+
+# ==================== PATTERN ROUTER ====================
+
+class PatternRouter:
+    """Rule-based dispatcher using compiled regex patterns with priority ordering."""
+
+    def __init__(self):
+        self.system_agent = SystemAgent()
+        self.app_agent = AppAgent()
+        self.web_agent = WebAgent()
+        self.info_agent = InfoAgent()
+
+        self._routes = self._compile_routes()
+
+    def _compile_routes(self) -> list:
+        sys = self.system_agent.handle
+        app = self.app_agent.handle
+        web = self.web_agent.handle
+        info = self.info_agent.handle
+
+        raw_routes = [
+            # Website opening comes FIRST, highest priority
+            (r'\b(open|go to|visit|navigate to|open site|open url).+(website|site)\b', web),
+            (r'\b(open|go to|visit|navigate to)\b.+(https?://|www\.|[a-z]+\.[a-z]{2,})', web),
+
+            # System patterns
+            (r'\b(battery|charge level|charging status|power level|how much battery)\b', sys),
+            (r'\b(network status|network info|ip address|connection status|internet status|my ip)\b', sys),
+            (r'\b(running (apps|processes|programs)|what is running|task list|show processes)\b', sys),
+            (r'\b(system info|cpu usage|ram usage|memory usage|disk usage|storage space)\b', sys),
+            (r'\b(wifi|wi.fi|wireless)\b.*(on|off|enable|disable|turn)', sys),
+            (r'\b(turn|enable|disable).*(wifi|wi.fi|wireless)\b', sys),
+            (r'\b(bluetooth)\b.*(on|off|enable|disable|turn)', sys),
+            (r'\b(turn|enable|disable).*(bluetooth)\b', sys),
+            (r'\b(volume|set volume|change volume|volume level)\b', sys),
+            (r'\b(brightness|screen brightness|set brightness|dim|brighten)\b', sys),
+            (r'\b(wallpaper|desktop background|change background|change wallpaper)\b', sys),
+            (r'\b(windows update|check updates|pending updates|update windows)\b', sys),
+
+            # App opening
+            (r'\b(open|launch|start|run)\b\s+(app\s+)?(?!website|site|url|http|[a-z]+\.[a-z])[a-z0-9 \+\#\-]{2,}', app),
+            (r'\b(scrape|fetch info|get info from|website info|fetch website)\b', web),
+            (r'\b(search (the )?(web|internet|online)|google|look up online|find on the web)\b', web),
+            (r"\b(what('?s| is) the (time|date)|current time|current date|what time|what day|today('?s)? date)\b", info),
+            (r'\b(weather|temperature|forecast|rain|sunny|cloudy|how (hot|cold)|climate)\b', info),
+            (r'\b(news|headlines|current events|latest news|top stories)\b', info),
+            (r'\b(play|youtube|play music|play (a )?song|play video)\b', info),
+            (r'\b(wikipedia|who is|what is|tell me about|explain|define|meaning of)\b', info),
+            (r'\b(create folder|make folder|new folder|delete file|delete folder|list files|show files|read file)\b', info),
+            (r'\b(search|find|look up)\b', web),
+        ]
+
+        return [(re.compile(pattern, re.IGNORECASE), handler) for pattern, handler in raw_routes]
+
+    def route(self, command: str, session: dict) -> str:
+        cmd_lower = command.lower()
+
+        # FIRST: Check if WebAgent should handle this (very permissive)
+        if ('website' in cmd_lower or 'site' in cmd_lower or 'open' in cmd_lower or 'visit' in cmd_lower):
+            # Let WebAgent check if it actually wants to handle it
+            result = self.web_agent.handle(command, session)
+            # If WebAgent returned something that's not "generic fallback", use it
+            if 'Please specify' not in result and 'fallback' not in result.lower():
+                return result
+
+        # Pattern-based routing
+        for pattern, handler in self._routes:
+            if pattern.search(command):
+                return handler(command, session)
+
+        return self.info_agent.handle(command, session)
+
+
+_router = PatternRouter()
+
+print("[STARTUP] Multi-agent router initialized with 4 agents")
 print("[STARTUP] APP READY TO RECEIVE REQUESTS", flush=True)
 
 # ==================== SESSION MANAGEMENT ====================
@@ -859,7 +1365,7 @@ def home():
 
 @app.route('/api/ask', methods=['POST'])
 def ask():
-    """Main API endpoint - simple if/elif keyword routing (2 am version)."""
+    """Main API endpoint — multi-agent pattern router."""
     try:
         data = request.json
         command = data.get('command', '').strip()
@@ -871,87 +1377,8 @@ def ask():
         session = get_or_create_session(session_id)
         session['messages'].append({"role": "user", "content": command})
 
-        # Simple if/elif keyword routing (2 am version)
-        cmd_lower = command.lower()
-        response_text = ""
-
-        if any(w in cmd_lower for w in ['time', 'hour', 'minute', 'what time']):
-            response_text = get_time()
-        elif any(w in cmd_lower for w in ['date', 'day', 'what date']):
-            response_text = get_date()
-        elif any(w in cmd_lower for w in ['weather', 'temperature', 'climate', 'rain', 'cold', 'hot']):
-            response_text = get_weather()
-        elif any(w in cmd_lower for w in ['news', 'headline', 'current event']):
-            response_text = get_news()
-        elif any(w in cmd_lower for w in ['system info', 'cpu', 'ram', 'memory', 'disk']):
-            response_text = get_system_info()
-        elif any(w in cmd_lower for w in ['wifi', 'wi-fi']):
-            if any(w in cmd_lower for w in ['on', 'enable', 'turn on']):
-                response_text = control_wifi('turn on')
-            elif any(w in cmd_lower for w in ['off', 'disable', 'turn off']):
-                response_text = control_wifi('turn off')
-            else:
-                response_text = control_wifi('toggle')
-        elif any(w in cmd_lower for w in ['bluetooth']):
-            if any(w in cmd_lower for w in ['on', 'enable', 'turn on']):
-                response_text = control_bluetooth('turn on')
-            elif any(w in cmd_lower for w in ['off', 'disable', 'turn off']):
-                response_text = control_bluetooth('turn off')
-            else:
-                response_text = control_bluetooth('toggle')
-        elif any(w in cmd_lower for w in ['volume']):
-            try:
-                import re
-                numbers = re.findall(r'\d+', command)
-                level = int(numbers[0]) if numbers else 50
-                response_text = set_volume(str(level))
-            except:
-                response_text = "Please specify a volume level (0-100)"
-        elif any(w in cmd_lower for w in ['brightness']):
-            try:
-                import re
-                numbers = re.findall(r'\d+', command)
-                level = int(numbers[0]) if numbers else 50
-                response_text = set_brightness(str(level))
-            except:
-                response_text = "Please specify a brightness level (0-100)"
-        elif any(w in cmd_lower for w in ['wallpaper', 'background']):
-            response_text = change_wallpaper()
-        elif any(w in cmd_lower for w in ['play ', 'youtube', 'music', 'song']):
-            query = command.replace('play', '').replace('youtube', '').strip()
-            response_text = play_youtube(query if query else 'music')
-        elif any(w in cmd_lower for w in ['create folder', 'make folder', 'new folder']):
-            folder_name = command.replace('create folder', '').replace('make folder', '').replace('new folder', '').strip()
-            response_text = create_folder(str(os.path.expanduser("~/Desktop")), folder_name if folder_name else 'NewFolder')
-        elif any(w in cmd_lower for w in ['delete file', 'delete folder', 'remove file']):
-            file_name = command.replace('delete file', '').replace('delete folder', '').replace('remove file', '').strip()
-            response_text = delete_file(file_name) if file_name else "Please specify a file to delete"
-        elif any(w in cmd_lower for w in ['list files', 'show files', 'what files']):
-            path = str(os.path.expanduser("~/Desktop"))
-            response_text = list_files(path)
-        elif any(w in cmd_lower for w in ['read file']):
-            file_name = command.replace('read file', '').strip()
-            response_text = read_file(file_name) if file_name else "Please specify a file to read"
-        elif any(w in cmd_lower for w in ['write file', 'save file']):
-            response_text = "Please provide file path and content"
-        elif any(w in cmd_lower for w in ['open app', 'launch']):
-            app_name = command.replace('open app', '').replace('launch', '').strip()
-            response_text = open_application(app_name) if app_name else "Please specify an app"
-        elif any(w in cmd_lower for w in ['open website', 'go to']):
-            url = command.replace('open website', '').replace('go to', '').strip()
-            response_text = open_website(url) if url else "Please specify a website"
-        elif any(w in cmd_lower for w in ['wikipedia', 'who is', 'what is']):
-            query = command.replace('wikipedia', '').replace('who is', '').replace('what is', '').strip()
-            response_text = search_wikipedia(query) if query else "Please specify who or what to search for"
-        elif any(w in cmd_lower for w in ['search', 'find']):
-            query = command.replace('search', '').replace('find', '').strip()
-            response_text = search_web(query) if query else "Please specify what to search for"
-        elif any(w in cmd_lower for w in ['update', 'windows update']):
-            response_text = check_windows_updates()
-        elif any(w in cmd_lower for w in ['whatsapp', 'send message']):
-            response_text = "Please specify contact and message"
-        else:
-            response_text = f"Command '{command}' not recognized. Try asking about time, weather, news, or system info."
+        # Multi-agent routing
+        response_text = _router.route(command, session)
 
         session['messages'].append({"role": "assistant", "content": response_text})
         response = jsonify({'response': response_text, 'session_id': session_id})

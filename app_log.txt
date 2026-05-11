@@ -1,0 +1,18 @@
+[STARTUP] Python started
+[STARTUP] Flask imported
+[STARTUP] All imports complete
+[STARTUP] Flask app created
+[STARTUP] Starting LLM initialization...
+[STARTUP] Calling _init_llms()...
+[STARTUP] Initializing LLMs...
+[STARTUP] Connecting to Ollama...
+[INFO] ChatOllama initialized successfully
+[INFO] ANTHROPIC_API_KEY not set. Claude fallback disabled.
+[STARTUP] _init_llms() complete
+[STARTUP] Multi-agent router initialized with 4 agents
+[STARTUP] APP READY TO RECEIVE REQUESTS
+[INFO] AI Virtual Assistant - Starting Flask Server
+[INFO] Ollama Model: llama3.2
+[INFO] Port: 8000
+[INFO] Access at: http://localhost:8000 or http://127.0.0.1:8000
+[INFO] Starting Flask web server...

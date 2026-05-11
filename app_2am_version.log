@@ -47,7 +47,3 @@ C:\Latest Environment (16.04.25)\my_new_env\AI Assistant\app.py:950: LangGraphDe
 [INFO] Port: 8000
 [INFO] Access at: http://localhost:8000 or http://127.0.0.1:8000
 [INFO] Starting Flask web server...
-[SUPERVISOR] 'what is 2+2?' -> info_agent
-[SUPERVISOR] 'what's the date today' -> info_agent
-[SUPERVISOR] 'change the volume to 40%' -> control_agent
-[SUPERVISOR] 'play a song from dhuram Dharam movie' -> media_agent
