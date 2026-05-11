@@ -1098,7 +1098,7 @@ def home():
 
 @app.route('/api/ask', methods=['POST'])
 def ask():
-    """Main API endpoint - LangGraph multi-agent handles all routing."""
+    """Main API endpoint - simple if/elif keyword routing (2 am version)."""
     try:
         data = request.json
         command = data.get('command', '').strip()
@@ -1107,18 +1107,93 @@ def ask():
         if not command:
             return jsonify({'response': 'Please say something.', 'session_id': session_id}), 200
 
-        if not _supervisor_graph:
-            return jsonify({
-                'response': 'AI not ready. Run: ollama serve (or set ANTHROPIC_API_KEY)',
-                'session_id': session_id
-            }), 503
-
         session = get_or_create_session(session_id)
         session['messages'].append({"role": "user", "content": command})
-        final_response = _run_agent(command, session_id)
-        session['messages'].append({"role": "assistant", "content": final_response})
 
-        response = jsonify({'response': final_response, 'session_id': session_id})
+        # Simple if/elif keyword routing (2 am version)
+        cmd_lower = command.lower()
+        response_text = ""
+
+        if any(w in cmd_lower for w in ['time', 'hour', 'minute', 'what time']):
+            response_text = get_time()
+        elif any(w in cmd_lower for w in ['date', 'day', 'today', 'what date']):
+            response_text = get_date()
+        elif any(w in cmd_lower for w in ['weather', 'temperature', 'climate', 'rain', 'cold', 'hot']):
+            response_text = get_weather()
+        elif any(w in cmd_lower for w in ['news', 'headline', 'current event']):
+            response_text = get_news()
+        elif any(w in cmd_lower for w in ['system info', 'cpu', 'ram', 'memory', 'disk']):
+            response_text = get_system_info()
+        elif any(w in cmd_lower for w in ['wifi', 'wi-fi']):
+            if any(w in cmd_lower for w in ['on', 'enable', 'turn on']):
+                response_text = control_wifi('turn on')
+            elif any(w in cmd_lower for w in ['off', 'disable', 'turn off']):
+                response_text = control_wifi('turn off')
+            else:
+                response_text = control_wifi('toggle')
+        elif any(w in cmd_lower for w in ['bluetooth']):
+            if any(w in cmd_lower for w in ['on', 'enable', 'turn on']):
+                response_text = control_bluetooth('turn on')
+            elif any(w in cmd_lower for w in ['off', 'disable', 'turn off']):
+                response_text = control_bluetooth('turn off')
+            else:
+                response_text = control_bluetooth('toggle')
+        elif any(w in cmd_lower for w in ['volume']):
+            try:
+                import re
+                numbers = re.findall(r'\d+', command)
+                level = int(numbers[0]) if numbers else 50
+                response_text = set_volume(str(level))
+            except:
+                response_text = "Please specify a volume level (0-100)"
+        elif any(w in cmd_lower for w in ['brightness']):
+            try:
+                import re
+                numbers = re.findall(r'\d+', command)
+                level = int(numbers[0]) if numbers else 50
+                response_text = set_brightness(str(level))
+            except:
+                response_text = "Please specify a brightness level (0-100)"
+        elif any(w in cmd_lower for w in ['wallpaper', 'background']):
+            response_text = change_wallpaper()
+        elif any(w in cmd_lower for w in ['play ', 'youtube', 'music', 'song']):
+            query = command.replace('play', '').replace('youtube', '').strip()
+            response_text = play_youtube(query if query else 'music')
+        elif any(w in cmd_lower for w in ['create folder', 'make folder', 'new folder']):
+            folder_name = command.replace('create folder', '').replace('make folder', '').replace('new folder', '').strip()
+            response_text = create_folder(str(os.path.expanduser("~/Desktop")), folder_name if folder_name else 'NewFolder')
+        elif any(w in cmd_lower for w in ['delete file', 'delete folder', 'remove file']):
+            file_name = command.replace('delete file', '').replace('delete folder', '').replace('remove file', '').strip()
+            response_text = delete_file(file_name) if file_name else "Please specify a file to delete"
+        elif any(w in cmd_lower for w in ['list files', 'show files', 'what files']):
+            path = str(os.path.expanduser("~/Desktop"))
+            response_text = list_files(path)
+        elif any(w in cmd_lower for w in ['read file']):
+            file_name = command.replace('read file', '').strip()
+            response_text = read_file(file_name) if file_name else "Please specify a file to read"
+        elif any(w in cmd_lower for w in ['write file', 'save file']):
+            response_text = "Please provide file path and content"
+        elif any(w in cmd_lower for w in ['open app', 'launch']):
+            app_name = command.replace('open app', '').replace('launch', '').strip()
+            response_text = open_application(app_name) if app_name else "Please specify an app"
+        elif any(w in cmd_lower for w in ['open website', 'go to']):
+            url = command.replace('open website', '').replace('go to', '').strip()
+            response_text = open_website(url) if url else "Please specify a website"
+        elif any(w in cmd_lower for w in ['wikipedia', 'who is', 'what is']):
+            query = command.replace('wikipedia', '').replace('who is', '').replace('what is', '').strip()
+            response_text = search_wikipedia(query) if query else "Please specify who or what to search for"
+        elif any(w in cmd_lower for w in ['search', 'find']):
+            query = command.replace('search', '').replace('find', '').strip()
+            response_text = search_web(query) if query else "Please specify what to search for"
+        elif any(w in cmd_lower for w in ['update', 'windows update']):
+            response_text = check_windows_updates()
+        elif any(w in cmd_lower for w in ['whatsapp', 'send message']):
+            response_text = "Please specify contact and message"
+        else:
+            response_text = f"Command '{command}' not recognized. Try asking about time, weather, news, or system info."
+
+        session['messages'].append({"role": "assistant", "content": response_text})
+        response = jsonify({'response': response_text, 'session_id': session_id})
         response.headers['Content-Type'] = 'application/json; charset=utf-8'
         return response
     except Exception as e:
