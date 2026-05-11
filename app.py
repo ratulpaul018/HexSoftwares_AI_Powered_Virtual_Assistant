@@ -2,17 +2,6 @@ print("[STARTUP] Python started", flush=True)
 from flask import Flask, render_template, request, jsonify
 print("[STARTUP] Flask imported", flush=True)
 from langchain_ollama import ChatOllama
-print("[STARTUP] ChatOllama imported", flush=True)
-from langchain_core.tools import StructuredTool
-print("[STARTUP] StructuredTool imported", flush=True)
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-print("[STARTUP] Messages imported", flush=True)
-from typing import Optional, List, TypedDict, Annotated, Literal
-print("[STARTUP] Typing imported", flush=True)
-from langgraph.graph import StateGraph, START, END, add_messages
-print("[STARTUP] LangGraph imported", flush=True)
-from langgraph.prebuilt import create_react_agent
-print("[STARTUP] create_react_agent imported", flush=True)
 import datetime
 import wikipedia
 import psutil
@@ -28,6 +17,7 @@ import shutil
 import re
 import threading
 import signal
+from typing import Optional, List
 
 print("[STARTUP] All imports complete", flush=True)
 app = Flask(__name__)
@@ -841,239 +831,10 @@ def get_news() -> str:
 # ==================== TOOL SETS FOR 4 AGENTS ====================
 
 
-def _wrap(fn, name, desc):
-    """Wrap a function as a LangChain StructuredTool."""
-    try:
-        return StructuredTool.from_function(fn, name=name, description=desc)
-    except Exception as e:
-        print(f"[WARNING] Could not wrap tool {name}: {e}")
-        return None
+# Tool definitions not needed - using simple if/elif routing in /api/ask endpoint
+print("[STARTUP] Tools initialized - 2am version")
 
-control_tools = list(filter(None, [
-    _wrap(set_brightness,    "set_brightness",    "Set screen brightness 0-100. Call when user wants to adjust brightness."),
-    _wrap(set_volume,        "set_volume",        "Set system volume 0-100. Call when user wants to change volume."),
-    _wrap(control_wifi,      "control_wifi",      "Turn Wi-Fi on or off. Pass 'turn on' or 'turn off'."),
-    _wrap(control_bluetooth, "control_bluetooth", "Turn Bluetooth on or off. Pass 'turn on' or 'turn off'."),
-    _wrap(change_wallpaper,  "change_wallpaper",  "Change desktop wallpaper. Call when user wants to change wallpaper."),
-]))
-info_tools = list(filter(None, [
-    _wrap(get_time,              "get_time",              "Get current time. Call when user asks what time it is."),
-    _wrap(get_date,              "get_date",              "Get current date. Call when user asks what date or day it is."),
-    _wrap(get_system_info,       "get_system_info",       "Get CPU/RAM/disk stats. Call when user asks about system info."),
-    _wrap(get_weather,           "get_weather",           "Get current weather. Call when user asks about weather or temperature."),
-    _wrap(get_news,              "get_news",              "Get latest news headlines. Call when user asks for news."),
-    _wrap(check_windows_updates, "check_windows_updates", "Check Windows pending updates. Call when user asks about updates."),
-    _wrap(search_wikipedia,      "search_wikipedia",      "Search Wikipedia. Call when user asks who/what something is."),
-    _wrap(search_web,            "search_web",            "Search the web via DuckDuckGo. Call for any web search."),
-    _wrap(scrape_website_content, "scrape_website_content", "Scrape and extract content from a specific website. Call when user asks to get info from a specific URL."),
-]))
-print(f"[DEBUG] Info tools: {len(info_tools)}")
-
-print("[DEBUG] Wrapping file tools...")
-file_tools = list(filter(None, [
-    _wrap(create_folder, "create_folder", "Create a folder. Call when user wants to make a new folder/directory."),
-    _wrap(delete_file,   "delete_file",   "Delete a file or folder. Call when user wants to delete something."),
-    _wrap(list_files,    "list_files",    "List files in a directory. Call when user wants to see folder contents."),
-    _wrap(read_file,     "read_file",     "Read a file's contents. Call when user wants to read a file."),
-    _wrap(write_file,    "write_file",    "Write content to a file. Call when user wants to save or write to a file."),
-    _wrap(rename_file,   "rename_file",   "Rename a file or folder."),
-    _wrap(move_file,     "move_file",     "Move a file or folder to another location."),
-]))
-print(f"[DEBUG] File tools: {len(file_tools)}")
-
-print("[DEBUG] Wrapping media tools...")
-media_tools = list(filter(None, [
-    _wrap(play_youtube,     "play_youtube",     "Play a YouTube video/song. Call when user wants to play music or video."),
-    _wrap(open_application, "open_application", "Open a Windows application by name."),
-    _wrap(open_website,     "open_website",     "Open a website URL in the browser."),
-    _wrap(send_whatsapp,    "send_whatsapp",    "Send a WhatsApp message to a contact."),
-]))
-
-print(f"[INFO] Created {len(control_tools)+len(info_tools)+len(file_tools)+len(media_tools)} tools for agent")
-
-# ==================== LANGGRAPH AGENT STATE ====================
-
-class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
-    session_id: str
-    next: str
-
-# ==================== SYSTEM PROMPTS FOR EACH AGENT ====================
-
-SUPERVISOR_PROMPT = """Classify the user request into exactly one category. Reply with ONLY the category name.
-
-Categories:
-- control_agent: wifi, bluetooth, volume, brightness, wallpaper
-- info_agent: weather, news, time, date, system info, wikipedia, web search, windows updates
-- file_agent: create/delete/list/read/write/rename/move files or folders
-- media_agent: youtube, play music, open app, open website, whatsapp
-
-Reply with only the category name. Nothing else."""
-
-CONTROL_PROMPT = """You are a system control agent. ALWAYS call a tool immediately. Never describe steps.
-For wifi/bluetooth: pass 'turn on' or 'turn off'. For volume/brightness: pass an integer 0-100."""
-
-INFO_PROMPT = """You are an information agent with tools: get_time, get_date, get_system_info, get_weather, get_news, check_windows_updates, search_wikipedia, search_web.
-
-RULES - FOLLOW EXACTLY:
-1. If user asks about WEATHER, TEMPERATURE, CONDITION, CLIMATE → ALWAYS call get_weather
-2. If user asks about DATE, DAY, TODAY (alone) → call get_date
-3. If user asks about TIME, HOUR, MINUTE → call get_time
-4. For "weather today" or "temperature today" → call get_weather (NOT get_date!)
-5. For NEWS, HEADLINES → call get_news
-6. For UPDATES, PATCHES → call check_windows_updates
-7. For WHO, WHAT (definitions) → call search_wikipedia
-8. For other searches → call search_web
-
-Never describe how to do things. ALWAYS call a tool. Choose the most relevant tool."""
-
-FILE_PROMPT = """You are a file system agent. ALWAYS call a tool. Never describe steps.
-Default path for new folders: Desktop. Extract the folder/file name from the user's message."""
-
-MEDIA_PROMPT = """You are a media/apps agent. ALWAYS call a tool.
-'play X' → play_youtube. 'open [app]' → open_application. 'open [URL]' → open_website."""
-
-# ==================== BUILD LANGGRAPH SUPERVISOR ====================
-
-_supervisor_graph = None
-_graph_llm = None
-
-def _build_supervisor_graph(llm):
-    """Build and compile the full supervisor + sub-agent graph."""
-    print("[DEBUG] Building control agent...", flush=True)
-    control_graph = create_react_agent(llm, tools=control_tools)
-    print("[DEBUG] Building info agent...", flush=True)
-    info_graph    = create_react_agent(llm, tools=info_tools)
-    print("[DEBUG] Building file agent...", flush=True)
-    file_graph    = create_react_agent(llm, tools=file_tools)
-    print("[DEBUG] Building media agent...", flush=True)
-    media_graph   = create_react_agent(llm, tools=media_tools)
-    print("[DEBUG] All sub-agents built", flush=True)
-
-    def supervisor_node(state: AgentState) -> dict:
-        """Classify intent with instant keyword matching — no LLM call needed."""
-        user_msg = next((m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None)
-        if not user_msg:
-            return {"next": "info_agent"}
-        t = user_msg.content.lower()
-        if any(w in t for w in ["wifi", "wi-fi", "bluetooth", "volume", "brightness", "wallpaper",
-                                 "turn on", "turn off"]):
-            agent = "control_agent"
-        elif any(w in t for w in ["create folder", "delete file", "delete folder", "list files",
-                                   "read file", "write file", "rename", "move file",
-                                   "make folder", "new folder", "folder", "directory"]):
-            agent = "file_agent"
-        elif any(w in t for w in ["play ", "youtube", "open app", "open website",
-                                   "whatsapp", "send message", "send whatsapp"]):
-            agent = "media_agent"
-        else:
-            agent = "info_agent"
-        print(f"[SUPERVISOR] '{user_msg.content[:60]}' -> {agent}", flush=True)
-        return {"next": agent}
-
-    def make_node(sub_graph, node_name, sys_prompt):
-        """Wrap a compiled agent graph as a StateGraph node."""
-        def node_fn(state: AgentState) -> dict:
-            user_msg = next((m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None)
-            if not user_msg:
-                return {"messages": [AIMessage(content="No query provided.")]}
-            try:
-                # Prepend system prompt directly to the user message for better instruction following
-                combined_content = sys_prompt + "\n\nUser request: " + user_msg.content
-                combined_msg = HumanMessage(content=combined_content)
-                result = sub_graph.invoke({"messages": [combined_msg]})
-                last_ai = next((m for m in reversed(result["messages"]) if isinstance(m, AIMessage) and m.content), None)
-                content = last_ai.content if last_ai else "Task completed."
-                return {"messages": [AIMessage(content=content)]}
-            except Exception as e:
-                print(f"[ERROR] {node_name}: {e}")
-                return {"messages": [AIMessage(content=f"Error: {str(e)}")]}
-        node_fn.__name__ = node_name
-        return node_fn
-
-    def route(state: AgentState) -> Literal["control_agent", "info_agent", "file_agent", "media_agent"]:
-        return state.get("next", "info_agent")
-
-    graph = StateGraph(AgentState)
-    graph.add_node("supervisor",    supervisor_node)
-    graph.add_node("control_agent", make_node(control_graph, "control_agent", CONTROL_PROMPT))
-    graph.add_node("info_agent",    make_node(info_graph,    "info_agent", INFO_PROMPT))
-    graph.add_node("file_agent",    make_node(file_graph,    "file_agent", FILE_PROMPT))
-    graph.add_node("media_agent",   make_node(media_graph,   "media_agent", MEDIA_PROMPT))
-    graph.add_edge(START, "supervisor")
-    graph.add_conditional_edges("supervisor", route,
-        {"control_agent": "control_agent", "info_agent": "info_agent",
-         "file_agent": "file_agent", "media_agent": "media_agent"})
-    graph.add_edge("control_agent", END)
-    graph.add_edge("info_agent",    END)
-    graph.add_edge("file_agent",    END)
-    graph.add_edge("media_agent",   END)
-    return graph.compile()
-
-def _init_graph():
-    """Initialize the LangGraph supervisor at startup."""
-    global _supervisor_graph, _graph_llm
-    print("[DEBUG] Starting graph initialization...")
-    llm = get_active_llm()
-    print(f"[DEBUG] Active LLM: {type(llm).__name__ if llm else 'None'}")
-    if not llm:
-        print("[WARNING] No LLM available — graph not built")
-        return
-    try:
-        print("[DEBUG] Building supervisor graph...")
-        _supervisor_graph = _build_supervisor_graph(llm)
-        _graph_llm = llm
-        print("[INFO] LangGraph supervisor graph compiled successfully")
-    except Exception as e:
-        import traceback
-        print(f"[ERROR] Failed to build graph: {e}")
-        traceback.print_exc()
-
-print("[STARTUP] About to initialize LangGraph...", flush=True)
-_init_graph()
-print("[STARTUP] LangGraph initialization complete", flush=True)
 print("[STARTUP] APP READY TO RECEIVE REQUESTS", flush=True)
-
-def _run_agent(command: str, session_id: str = "") -> str:
-    """Run the supervisor graph and return response with proper encoding."""
-    if not _supervisor_graph:
-        return "No AI agents available. Please start Ollama or set ANTHROPIC_API_KEY."
-    try:
-        result = _supervisor_graph.invoke({
-            "messages": [HumanMessage(content=command)],
-            "session_id": session_id,
-            "next": ""
-        })
-        last_ai = next((m for m in reversed(result["messages"]) if isinstance(m, AIMessage) and m.content), None)
-        response_text = last_ai.content if last_ai else "No response generated."
-
-        # Ensure proper encoding
-        try:
-            response_text.encode('utf-8')
-        except:
-            response_text = response_text.encode('utf-8', errors='replace').decode('utf-8')
-
-        return response_text
-    except Exception as e:
-        error_msg = str(e).encode('utf-8', errors='replace').decode('utf-8')
-        print(f"[ERROR] Graph invocation failed: {error_msg}")
-
-        # Try Claude fallback
-        if _claude_llm and _graph_llm is not _claude_llm:
-            try:
-                fallback_graph = _build_supervisor_graph(_claude_llm)
-                result = fallback_graph.invoke({
-                    "messages": [HumanMessage(content=command)],
-                    "session_id": session_id,
-                    "next": ""
-                })
-                last_ai = next((m for m in reversed(result["messages"]) if isinstance(m, AIMessage) and m.content), None)
-                return last_ai.content if last_ai else "No response generated."
-            except Exception as e2:
-                e2_msg = str(e2).encode('utf-8', errors='replace').decode('utf-8')
-                return f"Both LLMs failed. Error: {e2_msg}"
-
-        return f"LLM error: {error_msg}"
 
 # ==================== SESSION MANAGEMENT ====================
 
@@ -1116,7 +877,7 @@ def ask():
 
         if any(w in cmd_lower for w in ['time', 'hour', 'minute', 'what time']):
             response_text = get_time()
-        elif any(w in cmd_lower for w in ['date', 'day', 'today', 'what date']):
+        elif any(w in cmd_lower for w in ['date', 'day', 'what date']):
             response_text = get_date()
         elif any(w in cmd_lower for w in ['weather', 'temperature', 'climate', 'rain', 'cold', 'hot']):
             response_text = get_weather()
