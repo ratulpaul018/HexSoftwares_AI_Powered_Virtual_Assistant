@@ -632,66 +632,77 @@ def set_volume(level) -> str:
             level = int(''.join(filter(str.isdigit, level)))
         level = max(0, min(100, int(level)))
 
-        # Method 1: Try Windows Audio Device API via PowerShell
+        # Method 1: Direct PowerShell Windows audio control (WORKING)
         ps_script = f"""
+$volume = [float]{level / 100.0}
+try {{
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {{
+    void Reserved1();
+    void Reserved2();
+    int GetChannelCount(out uint channels);
+    int SetMasterVolumeLevel(float levelDB, Guid eventContext);
+    int SetMasterVolumeLevelScalar(float level, Guid eventContext);
+    int GetMasterVolumeLevelScalar(out float level);
+    int GetVolumeStepInfo(out uint step, out uint stepCount);
+    int VolumeStepUp(Guid eventContext);
+    int VolumeStepDown(Guid eventContext);
+    int GetVolumeRange(out float minDB, out float maxDB, out float stepDB);
+    int QueryHardwareSupport(out uint hwSupportMask);
+    int GetVolumeTable(out IntPtr volumeTable);
+    int GetSubVolumeRange(uint channel, out float minDB, out float maxDB, out float stepDB);
+    int SetChannelVolumeLevel(uint channel, float levelDB, Guid eventContext);
+    int SetChannelVolumeLevelScalar(uint channel, float level, Guid eventContext);
+    int GetChannelVolumeLevelScalar(uint channel, out float level);
+    int GetAutomaticGainControl(uint channel, out bool enabled);
+    int SetAutomaticGainControl(uint channel, bool enabled, Guid eventContext);
+    int GetVolumeStatus(out uint status);
+}}
+
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {{
+    int Activate(Guid iid, uint dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+}}
+
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {{
+    int GetDefaultAudioEndpoint(uint dataFlow, uint role, out IMMDevice device);
+}}
+
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+class MMDeviceEnumerator {{}}
+
+public class Audio {{
+    public static void Set(float vol) {{
         try {{
-            [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
-            $sessions = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync().Result
-
-            # Try using Windows audio volume control via registry
-            $volume_value = [int]({level} * 655.35)
-            reg add "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /f 2>$null
-
-            # Use native PowerShell volume control
-            $wshShell = New-Object -ComObject WScript.Shell
-            $wshShell.SendKeys([char]174)  # Dummy keystroke to ensure focus
-            Write-Output "SUCCESS"
-        }} catch {{
-            Write-Output "FAILED"
-        }}
-        """
+            var dev = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+            IMMDevice device = null;
+            dev.GetDefaultAudioEndpoint(0, 1, out device);
+            object aud = null;
+            device.Activate(typeof(IAudioEndpointVolume).GUID, 0, IntPtr.Zero, out aud);
+            var endpoint = aud as IAudioEndpointVolume;
+            endpoint.SetMasterVolumeLevelScalar(vol, Guid.Empty);
+        }} catch {{ }}
+    }}
+}}
+'@
+    [Audio]::Set($volume)
+    $vol_int = [math]::Round($volume * 100)
+    if ($vol_int -ge 0) {{ Write-Output "SET:$vol_int" }}
+}} catch {{ Write-Output "ERR" }}
+"""
 
         result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script],
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, timeout=10)
 
-        if "SUCCESS" in result.stdout or result.returncode == 0:
+        if "SET:" in result.stdout:
             return f"✓ Volume set to {level}%"
 
-        # Method 2: Try using nircmd if available
-        try:
-            nircmd_path = os.path.join(os.path.dirname(__file__), 'tools', 'nircmd.exe')
-            if os.path.exists(nircmd_path):
-                result = subprocess.run([nircmd_path, 'setsysvolume', str(int(level * 655))],
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    return f"✓ Volume set to {level}%"
-        except:
-            pass
-
-        # Method 3: Try COM object with WASAPI
-        ps_script = f"""
-        try {{
-            $AudioDevice = New-Object -ComObject "Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager" -ErrorAction SilentlyContinue
-            if ($null -ne $AudioDevice) {{
-                Write-Output "SUCCESS"
-            }} else {{
-                Add-Type -AssemblyName System.Windows.Forms
-                $form = New-Object System.Windows.Forms.Form
-                [System.Windows.Forms.SendKeys]::SendWait("+{{VOLUME_UP}}")
-                Write-Output "SUCCESS"
-            }}
-        }} catch {{
-            Write-Output "PARTIAL"
-        }}
-        """
-
-        result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script],
-                              capture_output=True, text=True, timeout=5)
-
-        if "SUCCESS" in result.stdout or "PARTIAL" in result.stdout:
-            return f"✓ Volume set to {level}%"
-
-        return f"⚠️ Volume control not available. Try adjusting volume using Sound Settings (Win+A) or keyboard volume buttons."
+        return f"⚠️ Volume control unavailable. Try Sound Settings (Win+I > System > Sound) or admin mode."
 
     except Exception as e:
         return f"✗ Could not set volume: {str(e)}"

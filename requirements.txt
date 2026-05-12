@@ -8,3 +8,5 @@ psutil>=5.9.0
 wikipedia>=1.4.0
 pywhatkit>=6.4
 lxml>=4.9.0
+pycaw>=20190726
+comtypes>=1.1.14
