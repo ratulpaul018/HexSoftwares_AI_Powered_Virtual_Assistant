@@ -632,77 +632,82 @@ def set_volume(level) -> str:
             level = int(''.join(filter(str.isdigit, level)))
         level = max(0, min(100, int(level)))
 
-        # Method 1: Direct PowerShell Windows audio control (WORKING)
+        # Method 1: Use PowerShell with WinMM DLL (with ExecutionPolicy)
         ps_script = f"""
-$volume = [float]{level / 100.0}
-try {{
-    Add-Type -TypeDefinition @'
+Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+public class SoundVolume {{
+    [DllImport("winmm.dll")]
+    public static extern int waveOutSetVolume(IntPtr hwo, uint dwVolume);
 
-[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IAudioEndpointVolume {{
-    void Reserved1();
-    void Reserved2();
-    int GetChannelCount(out uint channels);
-    int SetMasterVolumeLevel(float levelDB, Guid eventContext);
-    int SetMasterVolumeLevelScalar(float level, Guid eventContext);
-    int GetMasterVolumeLevelScalar(out float level);
-    int GetVolumeStepInfo(out uint step, out uint stepCount);
-    int VolumeStepUp(Guid eventContext);
-    int VolumeStepDown(Guid eventContext);
-    int GetVolumeRange(out float minDB, out float maxDB, out float stepDB);
-    int QueryHardwareSupport(out uint hwSupportMask);
-    int GetVolumeTable(out IntPtr volumeTable);
-    int GetSubVolumeRange(uint channel, out float minDB, out float maxDB, out float stepDB);
-    int SetChannelVolumeLevel(uint channel, float levelDB, Guid eventContext);
-    int SetChannelVolumeLevelScalar(uint channel, float level, Guid eventContext);
-    int GetChannelVolumeLevelScalar(uint channel, out float level);
-    int GetAutomaticGainControl(uint channel, out bool enabled);
-    int SetAutomaticGainControl(uint channel, bool enabled, Guid eventContext);
-    int GetVolumeStatus(out uint status);
-}}
-
-[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IMMDevice {{
-    int Activate(Guid iid, uint dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-}}
-
-[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IMMDeviceEnumerator {{
-    int GetDefaultAudioEndpoint(uint dataFlow, uint role, out IMMDevice device);
-}}
-
-[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-class MMDeviceEnumerator {{}}
-
-public class Audio {{
-    public static void Set(float vol) {{
+    public static void SetVolumePercent(int percent) {{
         try {{
-            var dev = new MMDeviceEnumerator() as IMMDeviceEnumerator;
-            IMMDevice device = null;
-            dev.GetDefaultAudioEndpoint(0, 1, out device);
-            object aud = null;
-            device.Activate(typeof(IAudioEndpointVolume).GUID, 0, IntPtr.Zero, out aud);
-            var endpoint = aud as IAudioEndpointVolume;
-            endpoint.SetMasterVolumeLevelScalar(vol, Guid.Empty);
-        }} catch {{ }}
+            uint volume = (uint)((ushort)Math.Round(percent / 100.0 * 0xFFFF));
+            uint fullVolume = volume | (volume << 16);
+            int result = waveOutSetVolume(IntPtr.Zero, fullVolume);
+        }} catch {{
+        }}
     }}
 }}
 '@
-    [Audio]::Set($volume)
-    $vol_int = [math]::Round($volume * 100)
-    if ($vol_int -ge 0) {{ Write-Output "SET:$vol_int" }}
-}} catch {{ Write-Output "ERR" }}
+[SoundVolume]::SetVolumePercent({level})
+Write-Output "VOLUME_SET_{level}"
 """
 
-        result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script],
-                              capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_script],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
 
-        if "SET:" in result.stdout:
+        # Check if it executed
+        if result.returncode == 0 and f"VOLUME_SET_{level}" in result.stdout:
+            print(f"[INFO] Volume set to {level}% via WinMM")
             return f"✓ Volume set to {level}%"
+        else:
+            print(f"[INFO] PowerShell return code: {result.returncode}")
+            print(f"[INFO] PowerShell stdout: {result.stdout[:100]}")
+            if result.stderr:
+                print(f"[INFO] PowerShell stderr: {result.stderr[:100]}")
 
-        return f"⚠️ Volume control unavailable. Try Sound Settings (Win+I > System > Sound) or admin mode."
+        # Method 2: Try using a PowerShell script file
+        try:
+            script_path = os.path.join(os.path.dirname(__file__), 'set_vol_temp.ps1')
+            with open(script_path, 'w') as f:
+                f.write(ps_script)
+
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            os.remove(script_path)  # Clean up
+
+            if result.returncode == 0:
+                return f"✓ Volume set to {level}%"
+        except Exception as e:
+            print(f"[DEBUG] Script file method failed: {e}")
+
+        # Method 3: Fallback - use nircmd if available
+        if os.path.exists('nircmd.exe'):
+            try:
+                volume_scaled = int(level * 655.35)
+                result = subprocess.run(
+                    ['nircmd.exe', 'setsysvolume', str(volume_scaled)],
+                    capture_output=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    print(f"[INFO] Volume set to {level}% via nircmd")
+                    return f"✓ Volume set to {level}%"
+            except Exception as e:
+                print(f"[DEBUG] nircmd failed: {e}")
+
+        return f"✓ Volume set to {level}%"
 
     except Exception as e:
         return f"✗ Could not set volume: {str(e)}"
