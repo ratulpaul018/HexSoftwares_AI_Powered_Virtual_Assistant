@@ -716,7 +716,7 @@
                 </button>
             </div>
 
-            <div class="status-bar" id="status">🎤 Ready to listen</div>
+            <div class="status-bar" id="status">Ready to listen</div>
             <div class="error-message" id="errorMsg"></div>
 
             <button class="mic-button" id="micBtn" title="Click to speak or say 'Stop' to pause">
@@ -805,7 +805,7 @@
             isListening = false;
             isSpeaking = false;
             micBtn.classList.remove('recording');
-            statusBar.innerHTML = '🎤 Ready - Click microphone to start';
+            statusBar.innerHTML = 'Ready - Click microphone to start';
             statusBar.className = 'status-bar';
             errorMsg.style.display = 'none';
         });
@@ -903,7 +903,7 @@
             // Don't auto-restart unless explicitly told to (after speaking in continuous mode)
             if (!isSpeaking) {
                 statusBar.className = 'status-bar';
-                statusBar.innerHTML = '🎤 Ready - Click microphone to start';
+                statusBar.innerHTML = 'Ready - Click microphone to start';
             }
         };
 
