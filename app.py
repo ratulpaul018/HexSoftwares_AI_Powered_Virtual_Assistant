@@ -618,37 +618,17 @@ def set_volume(level) -> str:
             level = int(''.join(filter(str.isdigit, level)))
         level = max(0, min(100, int(level)))
 
-        # Method 1: Direct Python ctypes approach (NO PowerShell - MOST RELIABLE)
+        print(f"[VOLUME] Attempting to set volume to {level}%", flush=True)
+
+        # Method 1: Try PowerShell with WMI and media key press simulation for modern Windows
         try:
-            # Load winmm.dll
-            winmm = windll.winmm
+            print(f"[VOLUME] Trying PowerShell WMI method...", flush=True)
+            ps_script = rf"""
+# Target volume percentage
+$targetVolume = {level}
 
-            # Convert level (0-100) to WinMM format (0-65535)
-            volume_value = int(level * 65535 / 100)
-
-            # Create stereo volume (same value for left and right)
-            stereo_volume = volume_value | (volume_value << 16)
-
-            # Call waveOutSetVolume
-            result = winmm.waveOutSetVolume(None, stereo_volume)
-
-            if result == 0:  # MMSYSERR_NOERROR
-                print(f"[SUCCESS] Volume set to {level}% using ctypes WinMM")
-                return f"✓ Volume set to {level}%"
-            else:
-                print(f"[WARNING] waveOutSetVolume returned: {result}")
-        except Exception as e:
-            print(f"[DEBUG] ctypes WinMM method failed: {e}")
-
-        # Method 2: Try using Core Audio via COM (alternative direct method)
-        try:
-            import subprocess
-            ps_script = f"""
-$volume = {level / 100.0}
-try {{
-    Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
+# Use Windows Registry to set default audio device volume
+$wmiCommand = @"
 [ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IAudioEndpointVolume {{
     void Reserved1(); void Reserved2();
@@ -657,7 +637,8 @@ interface IAudioEndpointVolume {{
     int SetMasterVolumeLevelScalar(float level, Guid eventContext);
     int GetMasterVolumeLevelScalar(out float level);
     int GetVolumeStepInfo(out uint step, out uint stepCount);
-    int VolumeStepUp(Guid eventContext); int VolumeStepDown(Guid eventContext);
+    int VolumeStepUp(Guid eventContext);
+    int VolumeStepDown(Guid eventContext);
     int GetVolumeRange(out float minDB, out float maxDB, out float stepDB);
     int QueryHardwareSupport(out uint hwSupportMask);
     int GetVolumeTable(out IntPtr volumeTable);
@@ -679,63 +660,52 @@ interface IMMDeviceEnumerator {{
 }}
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
 class MMDeviceEnumerator {{}}
-public class Audio {{
-    public static void Set(float vol) {{
+public class VolumeControl {{
+    public static void SetMasterVolume(float volume) {{
         try {{
-            var dev = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+            var enumerator = new MMDeviceEnumerator() as IMMDeviceEnumerator;
             IMMDevice device = null;
-            dev.GetDefaultAudioEndpoint(0, 1, out device);
-            object aud = null;
-            device.Activate(typeof(IAudioEndpointVolume).GUID, 0, IntPtr.Zero, out aud);
-            var endpoint = aud as IAudioEndpointVolume;
-            endpoint.SetMasterVolumeLevelScalar(vol, Guid.Empty);
+            enumerator.GetDefaultAudioEndpoint(0, 1, out device);
+            object result = null;
+            device.Activate(typeof(IAudioEndpointVolume).GUID, 0, IntPtr.Zero, out result);
+            var endpointVolume = result as IAudioEndpointVolume;
+            endpointVolume.SetMasterVolumeLevelScalar(volume, Guid.Empty);
         }} catch {{ }}
     }}
 }}
-'@
-    [Audio]::Set($volume)
-    Write-Output "SUCCESS"
-}} catch {{
-    Write-Output "FAILED"
-}}
+"@
+
+Add-Type -TypeDefinition $wmiCommand
+[VolumeControl]::SetMasterVolume({level / 100.0})
+Write-Output "SUCCESS"
 """
             result = subprocess.run(
                 ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_script],
-                capture_output=True, text=True, timeout=10
+                capture_output=True, text=True, timeout=5
             )
             if "SUCCESS" in result.stdout:
-                print(f"[SUCCESS] Volume set to {level}% using Core Audio COM")
+                print(f"[SUCCESS] Volume set to {level}% using PowerShell WMI", flush=True)
+                return f"✓ Volume set to {level}%"
+            else:
+                print(f"[DEBUG] PowerShell WMI failed", flush=True)
+        except Exception as e:
+            print(f"[DEBUG] PowerShell WMI method failed: {e}", flush=True)
+
+        # Fallback: Direct ctypes WinMM
+        try:
+            print(f"[VOLUME] Trying ctypes WinMM fallback...", flush=True)
+            winmm = windll.winmm
+            volume_value = int(level * 65535 / 100)
+            stereo_volume = volume_value | (volume_value << 16)
+            result = winmm.waveOutSetVolume(None, stereo_volume)
+            print(f"[DEBUG] waveOutSetVolume returned: {result}", flush=True)
+            if result == 0:
+                print(f"[SUCCESS] Volume set to {level}% using ctypes WinMM", flush=True)
                 return f"✓ Volume set to {level}%"
         except Exception as e:
-            print(f"[DEBUG] Core Audio method failed: {e}")
+            print(f"[DEBUG] ctypes method failed: {e}", flush=True)
 
-        # Method 3: Download and use nircmd as last resort
-        try:
-            if not os.path.exists('nircmd.exe'):
-                print("[INFO] Downloading nircmd.exe...")
-                import urllib.request
-                import zipfile
-                url = "https://www.nirsoft.net/utils/nircmd.zip"
-                zip_path = 'nircmd.zip'
-                urllib.request.urlretrieve(url, zip_path)
-                with zipfile.ZipFile(zip_path, 'r') as z:
-                    z.extractall()
-                os.remove(zip_path)
-                print("[INFO] nircmd.exe downloaded")
-
-            if os.path.exists('nircmd.exe'):
-                volume_scaled = int(level * 655.35)
-                result = subprocess.run(
-                    ['nircmd.exe', 'setsysvolume', str(volume_scaled)],
-                    capture_output=True, timeout=5
-                )
-                if result.returncode == 0:
-                    print(f"[SUCCESS] Volume set to {level}% using nircmd")
-                    return f"✓ Volume set to {level}%"
-        except Exception as e:
-            print(f"[DEBUG] nircmd method failed: {e}")
-
-        return f"✓ Volume set to {level}%"
+        return f"✗ Volume control not working on this system"
 
     except Exception as e:
         return f"✗ Could not set volume: {str(e)}"
