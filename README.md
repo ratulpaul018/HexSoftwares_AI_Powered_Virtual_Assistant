@@ -73,7 +73,7 @@ User: "headlines from bbc"
 #### 🎛️ System Control
 - WiFi on/off
 - Bluetooth on/off
-- Volume control (0-100)
+- **Volume control (0-100)** ⭐ *Now using Windows COM IAudioEndpointVolume API for reliable control*
 - Screen brightness (0-100)
 - Desktop wallpaper change
 
@@ -423,6 +423,12 @@ curl http://localhost:11434
 - Check internet connection
 - Verify domain name/website exists
 - Try opening URL directly in browser
+
+### Volume Control Not Working
+- Ensure Flask is running with admin privileges (recommended)
+- The app uses Windows COM IAudioEndpointVolume API to control system master volume
+- If not working, try: `python app.py` as Administrator
+- Check that your audio device is not muted at hardware level
 
 ---
 
