@@ -356,7 +356,7 @@ def open_website(url: str, get_info: bool = True) -> str:
         return f"✗ Could not open website: {str(e)}"
 
 def smart_open_app(app_name: str) -> str:
-    """Open an application using pre-built app dictionary with smart fallback."""
+    """Open an application - checks dictionary first, then PATH lookup as fallback."""
     try:
         app_lower = app_name.lower().strip()
 
@@ -364,10 +364,8 @@ def smart_open_app(app_name: str) -> str:
         if app_lower in _app_dictionary:
             target = _app_dictionary[app_lower]
             result = _execute_app(target, app_name)
-            # If dictionary path works, return success
             if "Opened" in result:
                 return result
-            # If dictionary path failed, fall through to fuzzy match
 
         # FUZZY MATCH IN DICTIONARY (fast, milliseconds)
         close_matches = difflib.get_close_matches(app_lower, _app_dictionary.keys(), n=1, cutoff=0.75)
@@ -377,7 +375,7 @@ def smart_open_app(app_name: str) -> str:
             if "Opened" in result:
                 return result
 
-        # FALLBACK: Try Windows PATH and common methods for unmatched or failed apps
+        # FALLBACK: Try Windows PATH
         try:
             result = subprocess.run(['where', app_name.split()[0]], capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
@@ -386,14 +384,7 @@ def smart_open_app(app_name: str) -> str:
         except:
             pass
 
-        # Try opening as app name directly (Windows may know it)
-        try:
-            subprocess.Popen(f'explorer shell:appsFolder\\{app_name}', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return f"✓ Opened {app_name}"
-        except:
-            pass
-
-        return f"✗ Could not open '{app_name}': Application not found on this system."
+        return f"✗ '{app_name}' not found in app dictionary"
     except Exception as e:
         return f"✗ Error opening application: {str(e)}"
 
@@ -422,12 +413,11 @@ def _execute_app(target: str, app_name: str) -> str:
         else:
             # Handle exe or other executable formats
             try:
-                # Verify path exists
-                if not os.path.exists(target):
-                    return f"✗ Path not found: {target}"
-                # Try to execute
+                # Try to execute (subprocess will search PATH for executable names)
                 subprocess.Popen(target, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return f"✓ Opened {app_name}"
+            except FileNotFoundError:
+                return f"✗ {app_name} not found"
             except Exception as e:
                 return f"✗ Error opening {app_name}: {str(e)}"
     except Exception as e:
@@ -1378,11 +1368,12 @@ class SystemAgent:
 
 
 class AppAgent:
-    """Handles opening applications and files via smart discovery."""
+    """Handles opening applications. If not found in app dictionary, searches web."""
 
     def handle(self, command: str, session: dict) -> str:
         cmd = command.lower()
 
+        # Extract app name from command
         for prefix in ('open app', 'launch', 'start', 'open', 'run'):
             if cmd.startswith(prefix) or f' {prefix} ' in cmd:
                 app_name = re.sub(
@@ -1390,14 +1381,59 @@ class AppAgent:
                     cmd, flags=re.IGNORECASE
                 ).strip()
                 if app_name:
-                    return smart_open_app(app_name)
+                    print(f"[DEBUG] AppAgent handling: '{app_name}'", flush=True)
+                    return self._open_or_search(app_name)
 
         app_name = re.sub(
             r'\b(open|launch|start|run|the|app|application|please)\b',
             '', command, flags=re.IGNORECASE
         ).strip()
 
-        return smart_open_app(app_name) if app_name else "Please specify an application name."
+        return self._open_or_search(app_name) if app_name else "Please specify an application name."
+
+    def _open_or_search(self, item_name: str) -> str:
+        """First check app dictionary, if not found search web and open website."""
+        item_lower = item_name.lower().strip()
+
+        # STEP 1: Check app dictionary (exact match)
+        if item_lower in _app_dictionary:
+            target = _app_dictionary[item_lower]
+            print(f"[DEBUG] Found '{item_name}' in app dictionary: {target}", flush=True)
+            result = _execute_app(target, item_name)
+            if "Opened" in result:
+                return result
+
+        # STEP 2: Check app dictionary (fuzzy match)
+        close_matches = difflib.get_close_matches(item_lower, _app_dictionary.keys(), n=1, cutoff=0.75)
+        if close_matches:
+            matched = close_matches[0]
+            target = _app_dictionary[matched]
+            print(f"[DEBUG] Fuzzy matched '{item_name}' to '{matched}': {target}", flush=True)
+            result = _execute_app(target, item_name)
+            if "Opened" in result:
+                return result
+
+        # STEP 3: Not in app dictionary, search Google and open website
+        try:
+            print(f"[INFO] '{item_name}' not in app dictionary (dict has {len(_app_dictionary)} apps), searching web...", flush=True)
+            # Try direct domain construction first
+            for domain_format in [f"https://www.{item_lower}.com", f"https://{item_lower}.com", f"https://{item_lower}.org"]:
+                try:
+                    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                    response = requests.head(domain_format, headers=headers, timeout=3)
+                    if response.status_code < 500:
+                        return open_website(domain_format, get_info=False)
+                except:
+                    pass
+
+            # Fallback: Google search
+            url = search_and_get_top_url(item_name)
+            if url and url != "https://google.com/search":
+                return open_website(url, get_info=False)
+            else:
+                return f"✗ Could not find '{item_name}' in apps or online"
+        except Exception as e:
+            return f"✗ Error searching for '{item_name}': {str(e)}"
 
 
 class WebAgent:
