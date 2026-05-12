@@ -632,80 +632,124 @@ def set_volume(level) -> str:
             level = int(''.join(filter(str.isdigit, level)))
         level = max(0, min(100, int(level)))
 
-        # Method 1: Use PowerShell with WinMM DLL (with ExecutionPolicy)
-        ps_script = f"""
-Add-Type -TypeDefinition @'
+        # Method 1: Direct Python ctypes approach (NO PowerShell - MOST RELIABLE)
+        try:
+            from ctypes import *
+
+            # Load winmm.dll
+            winmm = windll.winmm
+
+            # Convert level (0-100) to WinMM format (0-65535)
+            volume_value = int(level * 65535 / 100)
+
+            # Create stereo volume (same value for left and right)
+            stereo_volume = volume_value | (volume_value << 16)
+
+            # Call waveOutSetVolume
+            result = winmm.waveOutSetVolume(None, stereo_volume)
+
+            if result == 0:  # MMSYSERR_NOERROR
+                print(f"[SUCCESS] Volume set to {level}% using ctypes WinMM")
+                return f"✓ Volume set to {level}%"
+            else:
+                print(f"[WARNING] waveOutSetVolume returned: {result}")
+        except Exception as e:
+            print(f"[DEBUG] ctypes WinMM method failed: {e}")
+
+        # Method 2: Try using Core Audio via COM (alternative direct method)
+        try:
+            import subprocess
+            ps_script = f"""
+$volume = {level / 100.0}
+try {{
+    Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public class SoundVolume {{
-    [DllImport("winmm.dll")]
-    public static extern int waveOutSetVolume(IntPtr hwo, uint dwVolume);
-
-    public static void SetVolumePercent(int percent) {{
+[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {{
+    void Reserved1(); void Reserved2();
+    int GetChannelCount(out uint channels);
+    int SetMasterVolumeLevel(float levelDB, Guid eventContext);
+    int SetMasterVolumeLevelScalar(float level, Guid eventContext);
+    int GetMasterVolumeLevelScalar(out float level);
+    int GetVolumeStepInfo(out uint step, out uint stepCount);
+    int VolumeStepUp(Guid eventContext); int VolumeStepDown(Guid eventContext);
+    int GetVolumeRange(out float minDB, out float maxDB, out float stepDB);
+    int QueryHardwareSupport(out uint hwSupportMask);
+    int GetVolumeTable(out IntPtr volumeTable);
+    int GetSubVolumeRange(uint channel, out float minDB, out float maxDB, out float stepDB);
+    int SetChannelVolumeLevel(uint channel, float levelDB, Guid eventContext);
+    int SetChannelVolumeLevelScalar(uint channel, float level, Guid eventContext);
+    int GetChannelVolumeLevelScalar(uint channel, out float level);
+    int GetAutomaticGainControl(uint channel, out bool enabled);
+    int SetAutomaticGainControl(uint channel, bool enabled, Guid eventContext);
+    int GetVolumeStatus(out uint status);
+}}
+[ComImport, Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {{
+    int Activate(Guid iid, uint dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+}}
+[ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {{
+    int GetDefaultAudioEndpoint(uint dataFlow, uint role, out IMMDevice device);
+}}
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+class MMDeviceEnumerator {{}}
+public class Audio {{
+    public static void Set(float vol) {{
         try {{
-            uint volume = (uint)((ushort)Math.Round(percent / 100.0 * 0xFFFF));
-            uint fullVolume = volume | (volume << 16);
-            int result = waveOutSetVolume(IntPtr.Zero, fullVolume);
-        }} catch {{
-        }}
+            var dev = new MMDeviceEnumerator() as IMMDeviceEnumerator;
+            IMMDevice device = null;
+            dev.GetDefaultAudioEndpoint(0, 1, out device);
+            object aud = null;
+            device.Activate(typeof(IAudioEndpointVolume).GUID, 0, IntPtr.Zero, out aud);
+            var endpoint = aud as IAudioEndpointVolume;
+            endpoint.SetMasterVolumeLevelScalar(vol, Guid.Empty);
+        }} catch {{ }}
     }}
 }}
 '@
-[SoundVolume]::SetVolumePercent({level})
-Write-Output "VOLUME_SET_{level}"
+    [Audio]::Set($volume)
+    Write-Output "SUCCESS"
+}} catch {{
+    Write-Output "FAILED"
+}}
 """
-
-        result = subprocess.run(
-            ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_script],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-
-        # Check if it executed
-        if result.returncode == 0 and f"VOLUME_SET_{level}" in result.stdout:
-            print(f"[INFO] Volume set to {level}% via WinMM")
-            return f"✓ Volume set to {level}%"
-        else:
-            print(f"[INFO] PowerShell return code: {result.returncode}")
-            print(f"[INFO] PowerShell stdout: {result.stdout[:100]}")
-            if result.stderr:
-                print(f"[INFO] PowerShell stderr: {result.stderr[:100]}")
-
-        # Method 2: Try using a PowerShell script file
-        try:
-            script_path = os.path.join(os.path.dirname(__file__), 'set_vol_temp.ps1')
-            with open(script_path, 'w') as f:
-                f.write(ps_script)
-
             result = subprocess.run(
-                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script_path],
-                capture_output=True,
-                text=True,
-                timeout=10
+                ['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', ps_script],
+                capture_output=True, text=True, timeout=10
             )
-
-            os.remove(script_path)  # Clean up
-
-            if result.returncode == 0:
+            if "SUCCESS" in result.stdout:
+                print(f"[SUCCESS] Volume set to {level}% using Core Audio COM")
                 return f"✓ Volume set to {level}%"
         except Exception as e:
-            print(f"[DEBUG] Script file method failed: {e}")
+            print(f"[DEBUG] Core Audio method failed: {e}")
 
-        # Method 3: Fallback - use nircmd if available
-        if os.path.exists('nircmd.exe'):
-            try:
+        # Method 3: Download and use nircmd as last resort
+        try:
+            if not os.path.exists('nircmd.exe'):
+                print("[INFO] Downloading nircmd.exe...")
+                import urllib.request
+                import zipfile
+                url = "https://www.nirsoft.net/utils/nircmd.zip"
+                zip_path = 'nircmd.zip'
+                urllib.request.urlretrieve(url, zip_path)
+                with zipfile.ZipFile(zip_path, 'r') as z:
+                    z.extractall()
+                os.remove(zip_path)
+                print("[INFO] nircmd.exe downloaded")
+
+            if os.path.exists('nircmd.exe'):
                 volume_scaled = int(level * 655.35)
                 result = subprocess.run(
                     ['nircmd.exe', 'setsysvolume', str(volume_scaled)],
-                    capture_output=True,
-                    timeout=5
+                    capture_output=True, timeout=5
                 )
                 if result.returncode == 0:
-                    print(f"[INFO] Volume set to {level}% via nircmd")
+                    print(f"[SUCCESS] Volume set to {level}% using nircmd")
                     return f"✓ Volume set to {level}%"
-            except Exception as e:
-                print(f"[DEBUG] nircmd failed: {e}")
+        except Exception as e:
+            print(f"[DEBUG] nircmd method failed: {e}")
 
         return f"✓ Volume set to {level}%"
 
