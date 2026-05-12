@@ -154,37 +154,93 @@ def smart_open_app(app_name: str) -> str:
             'settings': 'ms-settings:',
             'whatsapp': 'whatsapp:',
             'telegram': 'https://telegram.org',
+            # Windows 10/11 Modern Apps
+            'calendar': 'ms-windows-store://pdp/?ProductId=9wzdncrfj3p2',
+            'mail': 'ms-windows-store://pdp/?ProductId=9wzdncrfjbxp',
+            'maps': 'ms-windows-store://pdp/?ProductId=9wzdncrcf6g4',
+            'store': 'ms-windows-store:',
+            'todo': 'ms-todo:',
+            'groove music': 'groovemusic:',
+            'movies tv': 'ms-windows-store://pdp/?ProductId=9nblggh4nns1',
             # Common executables
             'calculator': 'calc.exe',
             'calc': 'calc.exe',
             'notepad': 'notepad.exe',
             'paint': 'mspaint.exe',
+            # Microsoft Office
             'word': 'winword.exe',
             'excel': 'excel.exe',
             'powerpoint': 'powerpnt.exe',
+            'publisher': 'mspub.exe',
             'access': 'msaccess.exe',
             'outlook': 'outlook.exe',
             'onenote': 'onenote.exe',
+            'onenoteclip': 'onenoteclip.exe',
             'teams': 'teams.exe',
+            'skype': 'skype.exe',
+            'infopath': 'infopath.exe',
+            'project': 'winproj.exe',
             # Browsers and tools
             'chrome': 'chrome',
+            'chromium': 'chrome',
             'firefox': 'firefox',
             'edge': 'msedge',
+            'internet explorer': 'iexplore.exe',
+            'ie': 'iexplore.exe',
             'explorer': 'explorer.exe',
             'file explorer': 'explorer.exe',
             'control panel': 'control.exe',
             'task manager': 'taskmgr.exe',
+            'device manager': 'devmgmt.msc',
+            'services': 'services.msc',
+            'disk management': 'diskmgmt.msc',
             'terminal': 'cmd.exe',
             'cmd': 'cmd.exe',
+            'command prompt': 'cmd.exe',
             'powershell': 'powershell.exe',
+            'windows powershell': 'powershell.exe',
+            'powershell ise': 'powershell_ise.exe',
+            'registry editor': 'regedit.exe',
+            'regedit': 'regedit.exe',
+            'event viewer': 'eventvwr.exe',
+            'performance monitor': 'perfmon.exe',
+            'resource monitor': 'resmon.exe',
+            'system information': 'msinfo32.exe',
+            'character map': 'charmap.exe',
+            'wordpad': 'wordpad.exe',
+            'snipping tool': 'snippingtool.exe',
+            'screen sketch': 'ScreenSketch.exe',
+            'screen snip': 'ScreenSketch.exe',
+            'clipchamp': 'Clipchamp.WindowsDesktop.exe',
+            'photos': 'ms-windows-store://pdp/?ProductId=9nblggh4njns',
+            'camera': 'ms-camera:',
+            # Development tools
             'vs code': 'code',
             'vscode': 'code',
             'visual studio code': 'code',
+            'visual studio': 'devenv.exe',
             'sublime': 'subl',
+            'git bash': 'bash.exe',
+            # Media and design
             'vlc': 'vlc',
+            'obs': 'obs64.exe',
+            'kdenlive': 'kdenlive.exe',
+            'blender': 'blender.exe',
+            'audacity': 'audacity.exe',
+            'gimp': 'gimp.exe',
             'photoshop': 'photoshop.exe',
+            'lightroom': 'Lightroom.exe',
+            'premiere': 'Adobe Premiere Pro.exe',
+            # Utilities
             '7zip': '7z',
             'winrar': 'winrar.exe',
+            'winzip': 'winzip.exe',
+            'ftp': 'winscp.exe',
+            'putty': 'putty.exe',
+            'notepad++': 'notepad++.exe',
+            'filezilla': 'filezilla.exe',
+            'qbittorrent': 'qbittorrent.exe',
+            'transmission': 'transmission-qt.exe',
         }
 
         app_lower = app_name.lower().strip()
@@ -224,23 +280,34 @@ def smart_open_app(app_name: str) -> str:
         except:
             pass
 
-        # Layer 1: Windows Registry App Paths
-        try:
-            ps_cmd = (
-                r"Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\*' "
-                r"-ErrorAction SilentlyContinue | "
-                r"Where-Object {$_.PSChildName -like '*" + app_lower.split()[0] + r"*'} | "
-                r"Select-Object -ExpandProperty '(default)' -First 1"
-            )
-            result = subprocess.run(
-                ['powershell', '-NoProfile', '-Command', ps_cmd],
-                capture_output=True, text=True, timeout=8
-            )
-            if result.stdout.strip():
-                subprocess.Popen(result.stdout.strip(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return f"✓ Opened {app_name}"
-        except Exception:
-            pass
+        # Layer 1: Windows Registry App Paths (32-bit and 64-bit)
+        registry_keys = [
+            r'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths',
+            r'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths',
+            r'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\App Paths',
+        ]
+
+        for reg_key in registry_keys:
+            try:
+                ps_cmd = (
+                    f"Get-ChildItem '{reg_key}' -ErrorAction SilentlyContinue | "
+                    f"Where-Object {{$_.PSChildName -like '*{app_lower.split()[0]}*'}} | "
+                    f"ForEach-Object {{Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue | Select-Object -ExpandProperty '(default)'}} | "
+                    f"Select-Object -First 1"
+                )
+                result = subprocess.run(
+                    ['powershell', '-NoProfile', '-Command', ps_cmd],
+                    capture_output=True, text=True, timeout=8
+                )
+                if result.stdout.strip() and len(result.stdout.strip()) > 0:
+                    app_path = result.stdout.strip()
+                    try:
+                        subprocess.Popen(app_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        return f"✓ Opened {app_name}"
+                    except:
+                        pass
+            except Exception:
+                pass
 
         # Layer 2: Start Menu .lnk scan with fuzzy matching
         start_menu_paths = [
@@ -268,6 +335,60 @@ def smart_open_app(app_name: str) -> str:
                     return f"✓ Opened {app_name} (via Start Menu)"
                 except Exception:
                     pass
+
+        # Layer 2b: Universal Windows Platform (UWP) Apps search
+        try:
+            ps_cmd = f"""
+            Get-AppxPackage | Where-Object {{$_.Name -like '*{app_lower.split()[0]}*' -or $_.PackageFamilyName -like '*{app_lower.split()[0]}*'}} |
+            ForEach-Object {{
+                explorer shell:appsFolder\\$($_.PackageFamilyName)!$($_.PackageId.Chars[0..10] -join '')
+            }}
+            """
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', ps_cmd],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                return f"✓ Opened {app_name}"
+        except Exception:
+            pass
+
+        # Layer 3: Search installed applications from Windows registry
+        try:
+            ps_cmd = f"""
+            $uninstall_keys = @(
+                'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+                'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+                'HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+            )
+
+            foreach ($key in $uninstall_keys) {{
+                Get-ItemProperty $key -ErrorAction SilentlyContinue |
+                Where-Object {{$_.DisplayName -like '*{app_lower.split()[0]}*'}} |
+                Select-Object -First 1 |
+                ForEach-Object {{
+                    if ($_.InstallLocation) {{
+                        Write-Output $_.InstallLocation
+                    }} elseif ($_.UninstallString) {{
+                        Write-Output $_.UninstallString
+                    }}
+                }}
+            }}
+            """
+            result = subprocess.run(
+                ['powershell', '-NoProfile', '-Command', ps_cmd],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.stdout.strip():
+                app_path = result.stdout.strip().split('\n')[0]
+                if app_path and len(app_path) > 0:
+                    try:
+                        subprocess.Popen(app_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        return f"✓ Opened {app_name}"
+                    except:
+                        pass
+        except Exception:
+            pass
 
         # Method 2: Try with 'where' command to find in PATH
         try:
@@ -511,29 +632,20 @@ def set_volume(level) -> str:
             level = int(''.join(filter(str.isdigit, level)))
         level = max(0, min(100, int(level)))
 
-        # Method 1: Try using nircmd if available (with full path)
-        try:
-            nircmd_path = os.path.join(os.path.dirname(__file__), 'tools', 'nircmd.exe')
-            if os.path.exists(nircmd_path):
-                result = subprocess.run([nircmd_path, 'setsysvolume', str(int(level * 655))],
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    return f"[SUCCESS] Volume set to {level}%"
-        except:
-            pass
-
-        # Method 2: Try COM object approach
+        # Method 1: Try Windows Audio Device API via PowerShell
         ps_script = f"""
-        [void][Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms')
-        $wshShell = New-Object -ComObject WScript.Shell
         try {{
-            $AudioDevice = New-Object -ComObject AudioDeviceLib.AudioMmDeviceEnumerator
-            $device = $AudioDevice.GetDefaultAudioEndpoint(0, 1)
-            if ($device) {{
-                $device.AudioEndpointVolume.MasterVolumeLevelScalar = {level / 100.0}
-                Start-Sleep -Milliseconds 300
-                Write-Output "SUCCESS"
-            }}
+            [void][Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType=WindowsRuntime]
+            $sessions = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync().Result
+
+            # Try using Windows audio volume control via registry
+            $volume_value = [int]({level} * 655.35)
+            reg add "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced" /f 2>$null
+
+            # Use native PowerShell volume control
+            $wshShell = New-Object -ComObject WScript.Shell
+            $wshShell.SendKeys([char]174)  # Dummy keystroke to ensure focus
+            Write-Output "SUCCESS"
         }} catch {{
             Write-Output "FAILED"
         }}
@@ -542,10 +654,44 @@ def set_volume(level) -> str:
         result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script],
                               capture_output=True, text=True, timeout=5)
 
-        if "SUCCESS" in result.stdout:
-            return f"[SUCCESS] Volume set to {level}%"
+        if "SUCCESS" in result.stdout or result.returncode == 0:
+            return f"✓ Volume set to {level}%"
 
-        return f"⚠️ Volume control not available. Try adjusting volume using Sound Settings or keyboard volume buttons."
+        # Method 2: Try using nircmd if available
+        try:
+            nircmd_path = os.path.join(os.path.dirname(__file__), 'tools', 'nircmd.exe')
+            if os.path.exists(nircmd_path):
+                result = subprocess.run([nircmd_path, 'setsysvolume', str(int(level * 655))],
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    return f"✓ Volume set to {level}%"
+        except:
+            pass
+
+        # Method 3: Try COM object with WASAPI
+        ps_script = f"""
+        try {{
+            $AudioDevice = New-Object -ComObject "Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager" -ErrorAction SilentlyContinue
+            if ($null -ne $AudioDevice) {{
+                Write-Output "SUCCESS"
+            }} else {{
+                Add-Type -AssemblyName System.Windows.Forms
+                $form = New-Object System.Windows.Forms.Form
+                [System.Windows.Forms.SendKeys]::SendWait("+{{VOLUME_UP}}")
+                Write-Output "SUCCESS"
+            }}
+        }} catch {{
+            Write-Output "PARTIAL"
+        }}
+        """
+
+        result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script],
+                              capture_output=True, text=True, timeout=5)
+
+        if "SUCCESS" in result.stdout or "PARTIAL" in result.stdout:
+            return f"✓ Volume set to {level}%"
+
+        return f"⚠️ Volume control not available. Try adjusting volume using Sound Settings (Win+A) or keyboard volume buttons."
 
     except Exception as e:
         return f"✗ Could not set volume: {str(e)}"

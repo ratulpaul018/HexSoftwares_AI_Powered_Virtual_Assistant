@@ -1,0 +1,26 @@
+==================================================
+TEST 1: Brightness Control
+==================================================
+Status: 200
+Contains 'Brightness': True
+Response length: 23 chars
+
+TEST 2: Open Calculator
+Status: 200
+Contains 'Opened': True
+Response: ? Opened calculator
+
+TEST 3: Open Calendar
+Status: 200
+Contains 'Opened': True
+Response: ? Opened calendar
+
+TEST 4: Open Notepad
+Status: 200
+Contains 'Opened': True
+Response: ? Opened notepad
+
+TEST 5: Open Word (Microsoft Office)
+Status: 200
+Response contains success or error: True
+Response: ? Opened word
