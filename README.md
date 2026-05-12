@@ -1,286 +1,325 @@
 # 🤖 AI Virtual Assistant - Multi-Agent Architecture
 
-**A powerful AI assistant with intelligent multi-agent routing, smart app/website discovery, and web scraping capabilities. Runs 100% locally on your PC.**
+**A powerful, intelligent AI assistant with multi-agent routing, smart app discovery, and web scraping. Runs 100% locally on your Windows PC with Ollama or Claude AI.**
 
 ---
 
-## ✨ Key Features
+## ✨ Features
 
-### 🎯 Smart "Open" Command
-- **Priority-based routing:** Apps first, then websites
-- **Intelligent discovery:** Finds any application on your PC or searches for any website
-- Examples:
-  - `"open notepad"` → Opens Notepad application
-  - `"open chrome"` → Opens Chrome browser
-  - `"open medium"` → Searches & opens medium.com
-  - `"open cnn"` → Searches & opens cnn.com
-
-### 📰 News & Headlines Scraping
-- Scrapes websites with BeautifulSoup
-- Extracts top 10 headlines from any news site
-- Examples:
-  - `"headlines from bbc"` → Returns BBC news headlines
-  - `"news from cnn"` → Returns CNN news headlines
-  - `"top news from techcrunch"` → Returns TechCrunch headlines
+### 🎯 Smart Command Routing
+- **AppAgent** — Open any application on your PC
+- **SystemAgent** — Battery, network, WiFi, Bluetooth, brightness, volume, system info
+- **WebAgent** — Web search, website opening, news scraping, headlines
+- **InfoAgent** — Time, date, weather, news, Wikipedia, YouTube, file operations
 
 ### 🏗️ Multi-Agent Architecture
-- **SystemAgent** — Battery, network, processes, WiFi, Bluetooth, volume, brightness, wallpaper, updates
-- **AppAgent** — Opening applications via 6-layer smart discovery
-- **WebAgent** — Website search, news scraping, content fetching
-- **InfoAgent** — Time, date, weather, news, Wikipedia, YouTube, files, LLM fallback
+**Intelligent pattern-based routing** with 25+ compiled regex patterns:
+- Priority-ordered pattern matching
+- <1ms pattern evaluation (super-fast)
+- LLM fallback for unrecognized queries only
+- First-match-wins strategy
 
-### ⚡ Pattern-Based Routing (Super Fast)
-- <1ms regex pattern matching
-- First-match-wins priority ordering
-- LLM only as last resort for unrecognized queries
+### 🚀 Key Capabilities
+
+#### 🔍 Smart App Opening (6-Layer Discovery)
+```
+User: "open notepad"
+  ↓
+1. Static app map lookup (instant)
+2. Fuzzy matching (difflib)
+3. Windows Registry scan
+4. Start Menu .lnk files
+5. PATH environment variable
+6. Program Files walk
+  ↓
+✓ Opens Notepad
+```
+
+#### 🌐 Website Discovery
+```
+User: "open medium"
+  ↓
+1. Try direct domains (www.medium.com, medium.com, etc.)
+2. Google search + HTML parsing
+3. SITE_MAP registry lookup
+  ↓
+✓ Opens https://www.medium.com
+```
+
+#### 📰 News & Headlines Scraping
+```
+User: "headlines from bbc"
+  ↓
+1. Detect news pattern
+2. Find website
+3. Scrape with BeautifulSoup
+4. Extract h1-h4 headlines
+  ↓
+✓ Returns top 10 headlines
+```
+
+#### 💾 File Operations
+- Create, read, write, rename, move, delete files
+- Create, list directories
+- Full path support
+
+#### 📊 System Monitoring
+- Battery status & charging info
+- Network IP addresses & data usage
+- Running processes (CPU/RAM)
+- CPU/RAM/disk usage percentages
+- Windows update check
+
+#### 🎛️ System Control
+- WiFi on/off
+- Bluetooth on/off
+- Volume control (0-100)
+- Screen brightness (0-100)
+- Desktop wallpaper change
+
+---
+
+## 🛠️ Available Tools
+
+### System Tools (SystemAgent)
+| Tool | Description | Example |
+|------|-------------|---------|
+| `get_battery_status()` | Battery %, charging, time remaining | "battery status" |
+| `get_network_status()` | IP addresses, network adapters, data usage | "network status" |
+| `get_running_processes()` | Top CPU/RAM processes | "running processes" |
+| `get_system_info()` | CPU/RAM/disk usage | "system info" |
+| `control_wifi()` | Turn WiFi on/off | "turn on wifi" |
+| `control_bluetooth()` | Turn Bluetooth on/off | "enable bluetooth" |
+| `set_volume()` | Set system volume (0-100) | "set volume 50" |
+| `set_brightness()` | Set screen brightness (0-100) | "brightness 75" |
+| `change_wallpaper()` | Change desktop wallpaper | "change wallpaper" |
+| `check_windows_updates()` | Check for Windows updates | "windows updates" |
+
+### App Management Tools (AppAgent)
+| Tool | Description | Example |
+|------|-------------|---------|
+| `smart_open_app()` | Open application (6-layer discovery) | "open chrome" |
+| | | "launch notepad" |
+| | | "run calculator" |
+
+### Web Tools (WebAgent)
+| Tool | Description | Example |
+|------|-------------|---------|
+| `search_and_get_top_url()` | Search Google, extract top result | Internal |
+| `open_website()` | Open website + fetch info | "open medium" |
+| `fetch_website_info()` | Get title, description, headings | Internal |
+| `web_search_with_content()` | DuckDuckGo search with results | "search python tutorials" |
+| `scrape_website_content()` | Scrape website with query | Internal |
+| `scrape_website_headlines()` | Extract headlines from website | "headlines from bbc" |
+
+### Information Tools (InfoAgent)
+| Tool | Description | Example |
+|------|-------------|---------|
+| `get_time()` | Current time | "what time is it" |
+| `get_date()` | Today's date | "what's the date" |
+| `get_weather()` | Current weather & temperature | "weather today" |
+| `get_news()` | Latest news headlines | "news" |
+| `search_wikipedia()` | Wikipedia search | "who is albert einstein" |
+| `play_youtube()` | Play YouTube video | "play despacito" |
+| `send_whatsapp()` | Send WhatsApp message | "send message to john" |
+
+### File Operation Tools (InfoAgent)
+| Tool | Description | Example |
+|------|-------------|---------|
+| `create_folder()` | Create new folder | "create folder test" |
+| `list_files()` | List directory contents | "list files" |
+| `read_file()` | Read file content | "read file.txt" |
+| `write_file()` | Write to file | Internal |
+| `rename_file()` | Rename file | Internal |
+| `move_file()` | Move file to location | Internal |
+| `delete_file()` | Delete file | Internal |
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Python 3.8+
-- Ollama (or LM Studio / Jan.ai)
-- Windows 10/11
+- **Python** 3.8 or higher
+- **Ollama** (download from ollama.ai) OR Claude API key
+- **Windows 10/11**
 
 ### Installation
 
-1. **Clone the repository:**
+#### Step 1: Clone Repository
 ```bash
 git clone https://github.com/ratulpaul018/HexSoftwares_AI_Powered_Virtual_Assistant.git
 cd HexSoftwares_AI_Powered_Virtual_Assistant
 ```
 
-2. **Install dependencies:**
+#### Step 2: Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Start Ollama:**
+#### Step 3: Start Ollama (if using local LLM)
 ```bash
 ollama serve
+
 # In another terminal, pull a model:
 ollama pull llama2
 ```
 
-4. **Run the Flask app:**
+#### Step 4: Run the Application
 ```bash
 python app.py
 ```
 
-5. **Access the web interface:**
-Open http://localhost:8000 in your browser
-
----
-
-## 📋 System Architecture
-
+#### Step 5: Open in Browser
 ```
-User Command
-     ↓
-PatternRouter (25+ compiled regex patterns)
-     ├─ SystemAgent (hardware/OS queries)
-     ├─ AppAgent (app discovery + opening)
-     ├─ WebAgent (web search + news scraping)
-     └─ InfoAgent (general info + LLM fallback)
-     ↓
-Tool Execution
-     ├─ smart_open_app() — 6-layer app discovery
-     ├─ search_and_get_top_url() — Google parsing
-     ├─ scrape_website_headlines() — BeautifulSoup
-     ├─ get_battery_status() — psutil
-     ├─ get_network_status() — ifconfig + netstat
-     └─ 20+ more tools
-     ↓
-Response to User
+http://localhost:8000
 ```
 
 ---
 
-## 💡 Usage Examples
+## 📋 Usage Examples
 
 ### Opening Applications
 ```
 User: "open notepad"
-→ AppAgent finds notepad.exe
-→ Opens Notepad application
-✓ Response: "✓ Opened notepad"
+→ Finds notepad.exe
+→ Opens application
+✓ "✓ Opened notepad"
 
 User: "launch chrome"
-→ AppAgent finds chrome.exe
+→ Finds chrome.exe
 → Opens Chrome browser
-✓ Response: "✓ Opened chrome"
+✓ "✓ Opened chrome"
+
+User: "run calculator"
+→ Finds calc.exe
+→ Opens Calculator
+✓ "✓ Opened calculator"
 ```
 
-### Opening Websites
-```
-User: "open medium"
-→ Not an app → WebAgent takes over
-→ Tries www.medium.com (HEAD request)
-→ Found! Opens website with content preview
-✓ Response: "✓ Opened: medium\n  https://www.medium.com"
-
-User: "open amazon website"
-→ SITE_MAP lookup finds amazon.com
-→ Opens with website info
-✓ Response: "✓ Opened https://amazon.com"
-```
-
-### Getting Headlines
-```
-User: "headlines from bbc"
-→ WebAgent detects news pattern
-→ Finds BBC website
-→ Scrapes with BeautifulSoup
-→ Extracts top 10 headlines
-✓ Response: "📰 Latest news headlines:\n  • Cabinet split...\n  • Trump-Xi summit..."
-
-User: "news from techcrunch"
-→ Searches for TechCrunch
-→ Scrapes and returns headlines
-✓ Response: "📰 Latest news headlines:\n  • AI breakthrough...\n  • New startup..."
-```
-
-### System Commands
+### System Status
 ```
 User: "battery status"
-→ SystemAgent.get_battery_status()
-✓ Response: "🔋 Battery: 85% (Charging) | Time remaining: 2h 30m"
+✓ "🔋 Battery: 85% | Charging: Yes | Time: 2h 30m remaining"
 
-User: "show running processes"
-→ SystemAgent.get_running_processes()
-✓ Response: "📊 Top processes by CPU/RAM: Chrome: 45%, Edge: 32%..."
+User: "network status"
+✓ "🌐 Network Status: Connected | IP: 192.168.1.100 | Data: 2.3GB ↓ 845MB ↑"
 
-User: "check network status"
-→ SystemAgent.get_network_status()
-✓ Response: "🌐 Network Status: Connected | IP: 192.168.1.100 | Data: 2.3GB down, 845MB up"
+User: "running processes"
+✓ "📊 Top processes by CPU/RAM: Chrome: 45% | Firefox: 32% | Teams: 18%"
+
+User: "system info"
+✓ "💻 CPU: 35% | RAM: 8GB/16GB (50%) | Disk: 450GB/512GB (88%)"
+```
+
+### Website Operations
+```
+User: "open medium"
+→ Searches for medium.com
+→ Finds www.medium.com
+→ Opens website with info preview
+✓ "✓ Opened: medium\n  https://www.medium.com"
+
+User: "open github website"
+→ Opens github.com
+→ Fetches website info
+✓ "✓ Opened https://github.com"
+
+User: "headlines from bbc"
+→ Scrapes BBC website
+→ Extracts headlines
+✓ "📰 Latest news headlines:
+   • Cabinet split as Home Secretary...
+   • How Trump-Xi summit could set..."
+```
+
+### Information Queries
+```
+User: "what time is it"
+✓ "🕐 Current time: 2:30 PM"
+
+User: "what's the date"
+✓ "📅 Today's date: Monday, May 12, 2025"
+
+User: "weather"
+✓ "☀️ Weather: Sunny | Temperature: 72°F | Humidity: 65%"
+
+User: "who is albert einstein"
+✓ "Wikipedia: Albert Einstein was a German-born theoretical physicist..."
+```
+
+### File Operations
+```
+User: "create folder mynotes"
+✓ "✓ Created folder: mynotes"
+
+User: "list files"
+✓ "📁 Files in Desktop:
+   • document.txt
+   • photo.jpg
+   • project.zip"
+
+User: "read notes.txt"
+✓ "📄 Content of notes.txt:
+   Remember to buy milk
+   Call dentist on Friday..."
 ```
 
 ---
 
-## 🔍 Smart App Discovery (6 Layers)
+## 🏗️ Architecture
 
-When you say `"open [app_name]"`, the system tries to find it in this order:
-
-1. **Static Map Lookup** — Pre-configured apps (calc, notepad, chrome, etc.)
-2. **Fuzzy Matching** — Similar names (difflib, cutoff 0.75)
-3. **Windows Registry** — HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths
-4. **Start Menu Scan** — .lnk files in AppData & ProgramData
-5. **PATH Lookup** — where.exe for executables
-6. **Program Files Walk** — Search common installation directories
-
----
-
-## 🌐 Smart Website Discovery (2-Tier)
-
-When you say `"open [something]"` and it's not an app:
-
-1. **Direct Domain Detection** — Try www.name.com, name.com, www.name.org, name.net, name.io, etc.
-   - Uses HEAD requests for instant detection
-   - Accepts HTTP status < 500 (site exists if not server error)
-   - ~100-500ms per check
-
-2. **Google Search Parsing** — If direct lookup fails
-   - Searches Google
-   - Parses HTML with BeautifulSoup
-   - Extracts top result URL
-   - Filters out Google domains, translate, etc.
-
-3. **SITE_MAP Registry** — Pre-registered websites
-   - Wikipedia, Amazon, GitHub, YouTube, Netflix, etc.
-   - Instant lookup from dictionary
-
----
-
-## 🎯 Pattern Router Details
-
-**25+ Compiled Regex Patterns** (evaluated in priority order):
-
-| Priority | Pattern | Agent | Examples |
-|----------|---------|-------|----------|
-| 1 | `open ... website` | Web | "open cnn website" |
-| 2 | `open ... url` | Web | "open github.com" |
-| 3 | `battery/charge` | System | "battery status" |
-| 4 | `network/ip` | System | "network status" |
-| 5 | `process/running` | System | "running processes" |
-| 6 | `wifi/bluetooth` | System | "turn on wifi" |
-| 7 | `volume/brightness` | System | "set volume 50" |
-| 8 | `open [app]` | App | "open notepad" |
-| 9 | `news/headlines` | Web | "news from bbc" |
-| 10+ | Various | Info | time, weather, etc. |
-| Last | Fallback | Info | LLM general chat |
-
----
-
-## 📊 Performance Metrics
-
-| Operation | Time | Notes |
-|-----------|------|-------|
-| Pattern matching | <1ms | Compiled regex |
-| App discovery | ~100ms | Direct map lookup |
-| Direct domain check | 500-1000ms | HEAD requests |
-| Google search + parse | 2-3s | Network dependent |
-| News scraping | 2-5s | Website dependent |
-| LLM response | 1-10s | Model dependent |
-
----
-
-## 🛠️ Available Tools
-
-### System Tools
-- `get_battery_status()` — Battery percentage, charging status, time remaining
-- `get_network_status()` — IP address, data usage, connection status
-- `get_running_processes()` — Top CPU/RAM consuming processes
-- `get_system_info()` — CPU/RAM/disk usage percentages
-- `control_wifi()` — Turn WiFi on/off
-- `control_bluetooth()` — Turn Bluetooth on/off
-- `set_volume()` — Set system volume level
-- `set_brightness()` — Set screen brightness
-- `change_wallpaper()` — Change desktop wallpaper
-- `check_windows_updates()` — Check for Windows updates
-
-### App & Web Tools
-- `smart_open_app()` — 6-layer app discovery and opening
-- `search_and_get_top_url()` — Google search + domain detection
-- `scrape_website_headlines()` — Extract headlines with BeautifulSoup
-- `fetch_website_info()` — Get title, description, headings, content
-- `open_website()` — Open browser and fetch website info
-
-### Information Tools
-- `get_time()` — Current time
-- `get_date()` — Current date
-- `get_weather()` — Current weather
-- `get_news()` — Latest news headlines
-- `search_wikipedia()` — Wikipedia search
-- `play_youtube()` — Play YouTube videos
-- `web_search_with_content()` — Search web with results
-
----
-
-## 📁 Project Structure
-
+### PatternRouter (Pattern-Based Dispatcher)
 ```
-HexSoftwares_AI_Powered_Virtual_Assistant/
-├── app.py                          # Main Flask application
-├── requirements.txt                # Python dependencies
-├── README.md                       # This file
-├── templates/
-│   └── index.html                 # Web interface
-├── mcp_server_universal.py        # MCP server for Claude Code
-├── tools_extended.py              # Extended tool definitions
-├── SETUP.md                       # Detailed setup instructions
-├── QUICK_START.md                 # Quick reference
-├── FREE_FOREVER_GUIDE.md          # Backend configuration guide
-└── .vscode/
-    └── settings.json              # Claude Code integration config
+User Input
+    ↓
+PatternRouter (25+ compiled regex patterns)
+    ├─ Pattern 1: "open ... website" → WebAgent
+    ├─ Pattern 2: "battery/charge" → SystemAgent
+    ├─ Pattern 3: "network/ip" → SystemAgent
+    ├─ Pattern 4: "process/running" → SystemAgent
+    ├─ Pattern 5: "wifi/bluetooth" → SystemAgent
+    ├─ Pattern 6: "volume/brightness" → SystemAgent
+    ├─ Pattern 7: "open [app]" → AppAgent
+    ├─ Pattern 8: "news/headlines" → WebAgent
+    ├─ ... (17+ more patterns)
+    └─ Fallback: InfoAgent (LLM)
+    ↓
+Tool Execution
+    ↓
+Response
 ```
 
+### Agent Responsibilities
+
+**SystemAgent**
+- Hardware & OS control
+- Battery, network, WiFi, Bluetooth
+- Volume, brightness, wallpaper
+- Windows updates
+
+**AppAgent**
+- Multi-layer app discovery
+- Application launching
+- 6-strategy executable finding
+
+**WebAgent**
+- Website opening
+- Web searching
+- News scraping
+- Headlines extraction
+
+**InfoAgent**
+- Time, date, weather
+- News, Wikipedia, YouTube
+- File operations
+- LLM fallback for general chat
+
 ---
 
-## 🔗 API Endpoints
+## 📡 API Endpoints
 
 ### POST /api/ask
-Send a command and get a response.
+Send a voice command and get a response.
 
 **Request:**
 ```json
@@ -301,110 +340,185 @@ Send a command and get a response.
 ### GET /api/system
 Get system status information.
 
+**Response:**
+```json
+{
+  "cpu_usage": 35,
+  "ram_usage": 50,
+  "disk_usage": 88,
+  "battery": 85,
+  "charging": true
+}
+```
+
 ### POST /api/contacts
-Manage contacts.
+Manage contacts (create, read, update, delete).
+
+---
+
+## ⚙️ Configuration
+
+### LLM Selection
+
+**Using Ollama (Local - Free):**
+```bash
+ollama serve
+# In another terminal:
+ollama pull llama2
+```
+
+**Using Claude (Requires API key):**
+```bash
+# Set environment variable
+$env:ANTHROPIC_API_KEY = "your-api-key-here"
+python app.py
+```
+
+---
+
+## 📊 Performance Metrics
+
+| Operation | Time | Notes |
+|-----------|------|-------|
+| Pattern matching | <1ms | Compiled regex |
+| App discovery | ~100ms | Instant map lookup |
+| Website opening | ~2-3s | Direct domain + scraping |
+| Headlines scraping | ~2-5s | BeautifulSoup parsing |
+| LLM response | ~1-10s | Ollama/Claude dependent |
+
+---
+
+## 🔧 Troubleshooting
+
+### Flask App Won't Start
+```bash
+# Check if port 8000 is in use
+netstat -ano | findstr :8000
+
+# Kill the process
+taskkill /PID <PID> /F
+
+# Or use different port in app.py
+app.run(port=8001)
+```
+
+### Ollama Connection Error
+```bash
+# Ensure Ollama is running
+ollama serve
+
+# In another terminal, pull a model
+ollama pull llama2
+
+# Test the connection
+curl http://localhost:11434
+```
+
+### App Not Opening
+- Check if application name is correct
+- Verify app is installed on the system
+- Look for error messages in console
+
+### Website Not Opening
+- Check internet connection
+- Verify domain name/website exists
+- Try opening URL directly in browser
+
+---
+
+## 📝 File Structure
+
+```
+HexSoftwares_AI_Powered_Virtual_Assistant/
+├── app.py                    # Main Flask application
+├── requirements.txt          # Python dependencies
+├── README.md                 # This file
+├── templates/
+│   └── index.html           # Web interface
+└── .git/                    # Version control
+```
 
 ---
 
 ## 🔐 Privacy & Security
 
-- ✅ **100% local execution** — Nothing sent to external servers (except web search/weather/news)
-- ✅ **No API keys required** — Uses local Ollama LLM
-- ✅ **Open source** — Full transparency
-- ✅ **User controls data** — All data stored locally
-- ✅ **No telemetry** — No tracking or analytics
+- ✅ **100% Local** — Runs entirely on your PC
+- ✅ **No Cloud** — Nothing sent to external servers (except web search)
+- ✅ **Open Source** — Full code transparency
+- ✅ **Your Data** — Complete control over all information
+- ✅ **Offline** — Works without internet (except weather/news/web search)
 
 ---
 
-## 🚀 Performance Optimization
+## 🎯 Key Highlights
 
-- **Pattern matching** — Compiled regex patterns for instant evaluation
-- **First-match-wins** — Stops searching after first pattern match
-- **LLM as fallback** — Only invoked for unrecognized queries
-- **Caching** — Session management and app discovery caching
-- **Async operations** — Non-blocking web scraping and searches
-
----
-
-## 🐛 Troubleshooting
-
-### Flask app not starting?
-```bash
-# Check if port 8000 is in use
-netstat -ano | findstr :8000
-
-# Kill process using port 8000
-taskkill /PID <PID> /F
-```
-
-### Ollama connection error?
-```bash
-# Make sure Ollama is running
-ollama serve
-
-# In another terminal, pull a model
-ollama pull llama2
-```
-
-### App not opening?
-- Check if app name is correct
-- Verify app is installed
-- Look at logs for details
-
-### Website not opening?
-- Check internet connection
-- Verify domain name is correct
-- Try direct URL in browser
+- **Smart Routing** — Pattern-based dispatch with LLM fallback
+- **Super Fast** — <1ms pattern matching, instant response
+- **6-Layer App Discovery** — Finds any application on your PC
+- **Website Intelligence** — Searches Google, opens websites, scrapes content
+- **No Dependencies** — All standard Python libraries + minimal packages
+- **Extensible** — Easy to add new agents and patterns
 
 ---
 
-## 📖 Additional Resources
+## 📖 Documentation
 
-- **FREE_FOREVER_GUIDE.md** — Complete backend setup guide
-- **SETUP.md** — Detailed technical setup
-- **QUICK_START.md** — Quick reference guide
-- **SYSTEM_SUMMARY.md** — Architecture overview
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit PRs for:
-- New tools and features
-- Bug fixes
-- Documentation improvements
-- Performance optimizations
-
----
-
-## 📜 License
-
-This project is open source and available under the MIT License.
+- This README covers all features and usage
+- Check code comments for implementation details
+- Review `app.py` for complete tool definitions
 
 ---
 
 ## 🎉 You Now Have
 
-✅ **Smart app/website discovery** — Intelligently distinguishes apps from websites
-
-✅ **6-layer app discovery** — Finds any application on your PC
-
-✅ **Google search integration** — Finds and opens any website
-
-✅ **News scraping** — Extract headlines from any website
-
-✅ **Multi-agent architecture** — Specialized agents for different domains
-
-✅ **Pattern-based routing** — Super-fast <1ms pattern matching
-
-✅ **Zero external dependencies** — Runs completely locally
-
-✅ **Extensible design** — Easy to add new agents and tools
+✅ **Multi-agent AI assistant** — 4 specialized agents  
+✅ **Smart app discovery** — 6-layer search strategy  
+✅ **Web integration** — Search, open, scrape websites  
+✅ **System control** — Battery, network, WiFi, brightness, volume  
+✅ **File management** — Create, read, write, organize files  
+✅ **Information services** — Weather, news, Wikipedia, YouTube  
+✅ **Super-fast routing** — Pattern-based dispatch (<1ms)  
+✅ **Local execution** — 100% privacy-preserving  
 
 ---
 
-**Built with ❤️ for privacy-conscious developers**
+## 🚀 Quick Commands
 
-Get started: `python app.py` and open http://localhost:8000
+```
+# Open applications
+"open chrome"
+"launch notepad"
+"run calculator"
 
-Questions? Check the documentation files for detailed instructions!
+# Check system
+"battery status"
+"network status"
+"running processes"
+"system info"
+
+# Website operations
+"open medium"
+"open github website"
+"headlines from bbc"
+"search python tutorials"
+
+# System control
+"turn on wifi"
+"set volume 50"
+"brightness 75"
+"change wallpaper"
+
+# Information
+"what time is it"
+"weather"
+"who is albert einstein"
+"play despacito"
+```
+
+---
+
+**Built with ❤️ for privacy-conscious Windows users**
+
+**Get started:** `python app.py` → Open http://localhost:8000
+
+Questions? Check the code or error messages for detailed information!
