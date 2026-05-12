@@ -17,6 +17,7 @@ import shutil
 import re
 import threading
 import signal
+import difflib
 from typing import Optional, List
 
 print("[STARTUP] All imports complete", flush=True)
@@ -59,6 +60,226 @@ print("[STARTUP] _init_llms() complete", flush=True)
 
 def get_active_llm():
     return _ollama_llm or _claude_llm
+
+# ==================== APP DICTIONARY BUILDING ====================
+
+print("[STARTUP] Building comprehensive app dictionary...", flush=True)
+
+def build_app_dictionary() -> dict:
+    """Build a dictionary of all apps on the PC from multiple sources."""
+    apps = {}
+
+    # Base app map (static, predefined apps)
+    base_app_map = {
+        'gmail': 'https://gmail.com',
+        'google': 'https://google.com',
+        'youtube': 'https://youtube.com',
+        'github': 'https://github.com',
+        'twitter': 'https://twitter.com',
+        'facebook': 'https://facebook.com',
+        'linkedin': 'https://linkedin.com',
+        'reddit': 'https://reddit.com',
+        'stack overflow': 'https://stackoverflow.com',
+        'wikipedia': 'https://wikipedia.org',
+        'settings': 'ms-settings:',
+        'whatsapp': 'whatsapp:',
+        'telegram': 'https://telegram.org',
+        'calendar': 'ms-windows-store://pdp/?ProductId=9wzdncrfj3p2',
+        'mail': 'ms-windows-store://pdp/?ProductId=9wzdncrfjbxp',
+        'maps': 'ms-windows-store://pdp/?ProductId=9wzdncrcf6g4',
+        'store': 'ms-windows-store:',
+        'todo': 'ms-todo:',
+        'groove music': 'groovemusic:',
+        'movies tv': 'ms-windows-store://pdp/?ProductId=9nblggh4nns1',
+        'calculator': 'calc.exe',
+        'calc': 'calc.exe',
+        'notepad': 'notepad.exe',
+        'paint': 'mspaint.exe',
+        'word': 'winword.exe',
+        'excel': 'excel.exe',
+        'powerpoint': 'powerpnt.exe',
+        'publisher': 'mspub.exe',
+        'access': 'msaccess.exe',
+        'outlook': 'outlook.exe',
+        'onenote': 'onenote.exe',
+        'onenoteclip': 'onenoteclip.exe',
+        'teams': 'teams.exe',
+        'skype': 'skype.exe',
+        'infopath': 'infopath.exe',
+        'project': 'winproj.exe',
+        'chrome': 'chrome',
+        'chromium': 'chrome',
+        'firefox': 'firefox',
+        'edge': 'msedge',
+        'internet explorer': 'iexplore.exe',
+        'ie': 'iexplore.exe',
+        'explorer': 'explorer.exe',
+        'file explorer': 'explorer.exe',
+        'control panel': 'control.exe',
+        'task manager': 'taskmgr.exe',
+        'device manager': 'devmgmt.msc',
+        'services': 'services.msc',
+        'disk management': 'diskmgmt.msc',
+        'terminal': 'cmd.exe',
+        'cmd': 'cmd.exe',
+        'command prompt': 'cmd.exe',
+        'powershell': 'powershell.exe',
+        'windows powershell': 'powershell.exe',
+        'powershell ise': 'powershell_ise.exe',
+        'registry editor': 'regedit.exe',
+        'regedit': 'regedit.exe',
+        'event viewer': 'eventvwr.exe',
+        'performance monitor': 'perfmon.exe',
+        'resource monitor': 'resmon.exe',
+        'system information': 'msinfo32.exe',
+        'character map': 'charmap.exe',
+        'wordpad': 'wordpad.exe',
+        'snipping tool': 'snippingtool.exe',
+        'screen sketch': 'ScreenSketch.exe',
+        'screen snip': 'ScreenSketch.exe',
+        'clipchamp': 'Clipchamp.WindowsDesktop.exe',
+        'photos': 'ms-windows-store://pdp/?ProductId=9nblggh4njns',
+        'camera': 'ms-camera:',
+        'vs code': 'code',
+        'vscode': 'code',
+        'visual studio code': 'code',
+        'visual studio': 'devenv.exe',
+        'sublime': 'subl',
+        'git bash': 'bash.exe',
+        'vlc': 'vlc',
+        'obs': 'obs64.exe',
+        'kdenlive': 'kdenlive.exe',
+        'blender': 'blender.exe',
+        'audacity': 'audacity.exe',
+        'gimp': 'gimp.exe',
+        'photoshop': 'photoshop.exe',
+        'lightroom': 'Lightroom.exe',
+        'premiere': 'Adobe Premiere Pro.exe',
+        '7zip': '7z',
+        'winrar': 'winrar.exe',
+        'winzip': 'winzip.exe',
+        'ftp': 'winscp.exe',
+        'putty': 'putty.exe',
+        'notepad++': 'notepad++.exe',
+        'filezilla': 'filezilla.exe',
+        'qbittorrent': 'qbittorrent.exe',
+        'transmission': 'transmission-qt.exe',
+    }
+    apps.update(base_app_map)
+
+    # Scan Windows Registry for installed applications
+    print("[STARTUP] Scanning Windows Registry for apps...", flush=True)
+    try:
+        ps_cmd = """
+        $keys = @(
+            'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
+            'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
+        )
+        foreach ($key in $keys) {
+            Get-ItemProperty $key -ErrorAction SilentlyContinue |
+            Where-Object {$_.DisplayName -and $_.InstallLocation} |
+            Select-Object -First 100 |
+            ForEach-Object {
+                $name = $_.DisplayName -replace '[^a-zA-Z0-9 ]', ''
+                if ($name.Length -gt 2) {
+                    Write-Output "$name|$($_.InstallLocation)"
+                }
+            }
+        }
+        """
+        result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_cmd], capture_output=True, text=True, timeout=8)
+        registry_count = 0
+        for line in result.stdout.strip().split('\n'):
+            if '|' in line:
+                try:
+                    name, path = line.split('|', 1)
+                    name = name.strip().lower()
+                    path = path.strip()
+                    if name and path and len(name) > 2:
+                        apps[name] = path
+                        registry_count += 1
+                except:
+                    pass
+        print(f"[STARTUP] Registry scan found {registry_count} apps", flush=True)
+    except Exception as e:
+        print(f"[INFO] Registry scan skipped: {e}", flush=True)
+
+    # Scan Start Menu .lnk files
+    print("[STARTUP] Scanning Start Menu...", flush=True)
+    try:
+        start_menu_paths = [
+            os.path.join(os.environ.get('APPDATA', ''), r'Microsoft\Windows\Start Menu\Programs'),
+            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs'
+        ]
+        start_menu_count = 0
+        for base in start_menu_paths:
+            if os.path.isdir(base):
+                try:
+                    for root, _, files in os.walk(base):
+                        for f in files:
+                            if f.lower().endswith('.lnk'):
+                                app_name = os.path.splitext(f)[0].lower()
+                                if len(app_name) > 2 and app_name not in apps:
+                                    full_path = os.path.join(root, f)
+                                    apps[app_name] = full_path
+                                    start_menu_count += 1
+                except:
+                    pass
+        print(f"[STARTUP] Start Menu scan found {start_menu_count} apps", flush=True)
+    except Exception as e:
+        print(f"[INFO] Start Menu scan skipped: {e}", flush=True)
+
+    # Scan Program Files for executables (limited to 2 levels deep)
+    print("[STARTUP] Scanning Program Files...", flush=True)
+    try:
+        program_files_count = 0
+        for base_path in [r"C:\Program Files", r"C:\Program Files (x86)"]:
+            if os.path.isdir(base_path):
+                try:
+                    for root, dirs, files in os.walk(base_path):
+                        depth = len(root.split('\\')) - len(base_path.split('\\'))
+                        # Limit depth to 2 levels
+                        if depth > 2:
+                            dirs.clear()
+                            continue
+                        for f in files:
+                            if f.lower().endswith('.exe'):
+                                app_name = os.path.splitext(f)[0].lower()
+                                if len(app_name) > 2 and app_name not in apps:
+                                    full_path = os.path.join(root, f)
+                                    apps[app_name] = full_path
+                                    program_files_count += 1
+                except:
+                    pass
+        print(f"[STARTUP] Program Files scan found {program_files_count} apps", flush=True)
+    except Exception as e:
+        print(f"[INFO] Program Files scan skipped: {e}", flush=True)
+
+    # Scan PATH environment variable
+    print("[STARTUP] Scanning PATH...", flush=True)
+    try:
+        path_env = os.environ.get('PATH', '')
+        path_count = 0
+        for path_dir in path_env.split(';'):
+            if os.path.isdir(path_dir):
+                try:
+                    for f in os.listdir(path_dir):
+                        if f.lower().endswith('.exe'):
+                            app_name = os.path.splitext(f)[0].lower()
+                            if len(app_name) > 2 and app_name not in apps:
+                                full_path = os.path.join(path_dir, f)
+                                apps[app_name] = full_path
+                                path_count += 1
+                except:
+                    pass
+        print(f"[STARTUP] PATH scan found {path_count} apps", flush=True)
+    except Exception as e:
+        print(f"[INFO] PATH scan skipped: {e}", flush=True)
+
+    print(f"[STARTUP] [OK] App dictionary built with {len(apps)} apps", flush=True)
+    return apps
+
+_app_dictionary = build_app_dictionary()
 
 # ==================== TOOL DEFINITIONS ====================
 
@@ -135,134 +356,31 @@ def open_website(url: str, get_info: bool = True) -> str:
         return f"✗ Could not open website: {str(e)}"
 
 def smart_open_app(app_name: str) -> str:
-    """Open an application using multi-strategy discovery with fuzzy matching."""
-    import difflib
+    """Open an application using pre-built app dictionary (instant O(1) lookups)."""
     try:
-        app_map = {
-            # Web services
-            'gmail': 'https://gmail.com',
-            'google': 'https://google.com',
-            'youtube': 'https://youtube.com',
-            'github': 'https://github.com',
-            'twitter': 'https://twitter.com',
-            'facebook': 'https://facebook.com',
-            'linkedin': 'https://linkedin.com',
-            'reddit': 'https://reddit.com',
-            'stack overflow': 'https://stackoverflow.com',
-            'wikipedia': 'https://wikipedia.org',
-            # System apps with icons/protocols
-            'settings': 'ms-settings:',
-            'whatsapp': 'whatsapp:',
-            'telegram': 'https://telegram.org',
-            # Windows 10/11 Modern Apps
-            'calendar': 'ms-windows-store://pdp/?ProductId=9wzdncrfj3p2',
-            'mail': 'ms-windows-store://pdp/?ProductId=9wzdncrfjbxp',
-            'maps': 'ms-windows-store://pdp/?ProductId=9wzdncrcf6g4',
-            'store': 'ms-windows-store:',
-            'todo': 'ms-todo:',
-            'groove music': 'groovemusic:',
-            'movies tv': 'ms-windows-store://pdp/?ProductId=9nblggh4nns1',
-            # Common executables
-            'calculator': 'calc.exe',
-            'calc': 'calc.exe',
-            'notepad': 'notepad.exe',
-            'paint': 'mspaint.exe',
-            # Microsoft Office
-            'word': 'winword.exe',
-            'excel': 'excel.exe',
-            'powerpoint': 'powerpnt.exe',
-            'publisher': 'mspub.exe',
-            'access': 'msaccess.exe',
-            'outlook': 'outlook.exe',
-            'onenote': 'onenote.exe',
-            'onenoteclip': 'onenoteclip.exe',
-            'teams': 'teams.exe',
-            'skype': 'skype.exe',
-            'infopath': 'infopath.exe',
-            'project': 'winproj.exe',
-            # Browsers and tools
-            'chrome': 'chrome',
-            'chromium': 'chrome',
-            'firefox': 'firefox',
-            'edge': 'msedge',
-            'internet explorer': 'iexplore.exe',
-            'ie': 'iexplore.exe',
-            'explorer': 'explorer.exe',
-            'file explorer': 'explorer.exe',
-            'control panel': 'control.exe',
-            'task manager': 'taskmgr.exe',
-            'device manager': 'devmgmt.msc',
-            'services': 'services.msc',
-            'disk management': 'diskmgmt.msc',
-            'terminal': 'cmd.exe',
-            'cmd': 'cmd.exe',
-            'command prompt': 'cmd.exe',
-            'powershell': 'powershell.exe',
-            'windows powershell': 'powershell.exe',
-            'powershell ise': 'powershell_ise.exe',
-            'registry editor': 'regedit.exe',
-            'regedit': 'regedit.exe',
-            'event viewer': 'eventvwr.exe',
-            'performance monitor': 'perfmon.exe',
-            'resource monitor': 'resmon.exe',
-            'system information': 'msinfo32.exe',
-            'character map': 'charmap.exe',
-            'wordpad': 'wordpad.exe',
-            'snipping tool': 'snippingtool.exe',
-            'screen sketch': 'ScreenSketch.exe',
-            'screen snip': 'ScreenSketch.exe',
-            'clipchamp': 'Clipchamp.WindowsDesktop.exe',
-            'photos': 'ms-windows-store://pdp/?ProductId=9nblggh4njns',
-            'camera': 'ms-camera:',
-            # Development tools
-            'vs code': 'code',
-            'vscode': 'code',
-            'visual studio code': 'code',
-            'visual studio': 'devenv.exe',
-            'sublime': 'subl',
-            'git bash': 'bash.exe',
-            # Media and design
-            'vlc': 'vlc',
-            'obs': 'obs64.exe',
-            'kdenlive': 'kdenlive.exe',
-            'blender': 'blender.exe',
-            'audacity': 'audacity.exe',
-            'gimp': 'gimp.exe',
-            'photoshop': 'photoshop.exe',
-            'lightroom': 'Lightroom.exe',
-            'premiere': 'Adobe Premiere Pro.exe',
-            # Utilities
-            '7zip': '7z',
-            'winrar': 'winrar.exe',
-            'winzip': 'winzip.exe',
-            'ftp': 'winscp.exe',
-            'putty': 'putty.exe',
-            'notepad++': 'notepad++.exe',
-            'filezilla': 'filezilla.exe',
-            'qbittorrent': 'qbittorrent.exe',
-            'transmission': 'transmission-qt.exe',
-        }
-
         app_lower = app_name.lower().strip()
 
-        # Layer 0: Exact match in app_map
-        if app_lower in app_map:
-            target = app_map[app_lower]
-            if target.startswith('https://'):
-                return open_website(target, get_info=False)
-            # For other targets, fall through to execution logic
-        else:
-            # Layer 0b: Fuzzy match in app_map
-            close = difflib.get_close_matches(app_lower, app_map.keys(), n=1, cutoff=0.75)
-            if close:
-                target = app_map[close[0]]
-                if target.startswith('https://'):
-                    return open_website(target, get_info=False)
-            else:
-                target = app_name
+        # INSTANT DICTIONARY LOOKUP (O(1) speed)
+        if app_lower in _app_dictionary:
+            target = _app_dictionary[app_lower]
+            return _execute_app(target, app_name)
 
-        # Handle protocol handlers (ms-settings:, whatsapp:, etc.)
-        if isinstance(target, str) and target.endswith(':'):
+        # FUZZY MATCH IN DICTIONARY (fast, milliseconds)
+        close_matches = difflib.get_close_matches(app_lower, _app_dictionary.keys(), n=1, cutoff=0.75)
+        if close_matches:
+            target = _app_dictionary[close_matches[0]]
+            return _execute_app(target, app_name)
+
+        return f"✗ Could not open '{app_name}': Application not found on this system."
+    except Exception as e:
+        return f"✗ Error opening application: {str(e)}"
+
+def _execute_app(target: str, app_name: str) -> str:
+    """Execute an app by its target (exe path, protocol, or URL)."""
+    try:
+        if target.startswith('https://'):
+            return open_website(target, get_info=False)
+        elif target.endswith(':'):
             try:
                 subprocess.Popen(f'explorer "{target}"')
                 return f"✓ Opened {app_name}"
@@ -271,172 +389,12 @@ def smart_open_app(app_name: str) -> str:
                     subprocess.run(['cmd', '/c', f'start {target}'], check=False, timeout=5)
                     return f"✓ Opened {app_name}"
                 except:
-                    pass
-
-        # Method 1: Try direct execution
-        try:
+                    return f"✗ Could not open {app_name}"
+        else:
             subprocess.Popen(target, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return f"✓ Opened {app_name}"
-        except:
-            pass
-
-        # Layer 1: Windows Registry App Paths (32-bit and 64-bit)
-        registry_keys = [
-            r'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths',
-            r'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths',
-            r'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\App Paths',
-        ]
-
-        for reg_key in registry_keys:
-            try:
-                ps_cmd = (
-                    f"Get-ChildItem '{reg_key}' -ErrorAction SilentlyContinue | "
-                    f"Where-Object {{$_.PSChildName -like '*{app_lower.split()[0]}*'}} | "
-                    f"ForEach-Object {{Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue | Select-Object -ExpandProperty '(default)'}} | "
-                    f"Select-Object -First 1"
-                )
-                result = subprocess.run(
-                    ['powershell', '-NoProfile', '-Command', ps_cmd],
-                    capture_output=True, text=True, timeout=8
-                )
-                if result.stdout.strip() and len(result.stdout.strip()) > 0:
-                    app_path = result.stdout.strip()
-                    try:
-                        subprocess.Popen(app_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        return f"✓ Opened {app_name}"
-                    except:
-                        pass
-            except Exception:
-                pass
-
-        # Layer 2: Start Menu .lnk scan with fuzzy matching
-        start_menu_paths = [
-            os.path.join(os.environ.get('APPDATA', ''), r'Microsoft\Windows\Start Menu\Programs'),
-            r'C:\ProgramData\Microsoft\Windows\Start Menu\Programs'
-        ]
-        candidates = []
-        for base in start_menu_paths:
-            if os.path.isdir(base):
-                try:
-                    for root, _, files in os.walk(base):
-                        for f in files:
-                            if f.lower().endswith('.lnk'):
-                                candidates.append(os.path.join(root, f))
-                except:
-                    pass
-
-        if candidates:
-            lnk_names = [os.path.splitext(os.path.basename(c))[0].lower() for c in candidates]
-            close_lnk = difflib.get_close_matches(app_lower, lnk_names, n=1, cutoff=0.6)
-            if close_lnk:
-                idx = lnk_names.index(close_lnk[0])
-                try:
-                    os.startfile(candidates[idx])
-                    return f"✓ Opened {app_name} (via Start Menu)"
-                except Exception:
-                    pass
-
-        # Layer 2b: Universal Windows Platform (UWP) Apps search
-        try:
-            ps_cmd = f"""
-            Get-AppxPackage | Where-Object {{$_.Name -like '*{app_lower.split()[0]}*' -or $_.PackageFamilyName -like '*{app_lower.split()[0]}*'}} |
-            ForEach-Object {{
-                explorer shell:appsFolder\\$($_.PackageFamilyName)!$($_.PackageId.Chars[0..10] -join '')
-            }}
-            """
-            result = subprocess.run(
-                ['powershell', '-NoProfile', '-Command', ps_cmd],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0:
-                return f"✓ Opened {app_name}"
-        except Exception:
-            pass
-
-        # Layer 3: Search installed applications from Windows registry
-        try:
-            ps_cmd = f"""
-            $uninstall_keys = @(
-                'HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
-                'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*',
-                'HKLM:\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'
-            )
-
-            foreach ($key in $uninstall_keys) {{
-                Get-ItemProperty $key -ErrorAction SilentlyContinue |
-                Where-Object {{$_.DisplayName -like '*{app_lower.split()[0]}*'}} |
-                Select-Object -First 1 |
-                ForEach-Object {{
-                    if ($_.InstallLocation) {{
-                        Write-Output $_.InstallLocation
-                    }} elseif ($_.UninstallString) {{
-                        Write-Output $_.UninstallString
-                    }}
-                }}
-            }}
-            """
-            result = subprocess.run(
-                ['powershell', '-NoProfile', '-Command', ps_cmd],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.stdout.strip():
-                app_path = result.stdout.strip().split('\n')[0]
-                if app_path and len(app_path) > 0:
-                    try:
-                        subprocess.Popen(app_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                        return f"✓ Opened {app_name}"
-                    except:
-                        pass
-        except Exception:
-            pass
-
-        # Method 2: Try with 'where' command to find in PATH
-        try:
-            result = subprocess.run(['where', target], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                app_path = result.stdout.strip().split('\n')[0]
-                subprocess.Popen(app_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return f"✓ Opened {app_name}"
-        except:
-            pass
-
-        # Method 3: Search in common installation directories
-        common_paths = [
-            r"C:\Program Files",
-            r"C:\Program Files (x86)",
-            os.path.expanduser("~\\AppData\\Local\\Programs"),
-            r"C:\Users",
-        ]
-
-        for base_path in common_paths:
-            try:
-                for root, dirs, files in os.walk(base_path):
-                    for file in files:
-                        if file.lower().startswith(target.lower().split()[0]) and file.lower().endswith(('.exe', '.lnk')):
-                            full_path = os.path.join(root, file)
-                            try:
-                                os.startfile(full_path) if file.endswith('.lnk') else subprocess.Popen(full_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                            except:
-                                pass
-                            return f"✓ Opened {app_name}"
-            except:
-                continue
-
-        # Method 4: Use PowerShell Get-Command to find executables
-        try:
-            ps_cmd = f"Get-Command {target} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source"
-            result = subprocess.run(['powershell', '-NoProfile', '-Command', ps_cmd],
-                                  capture_output=True, text=True, timeout=10)
-            if result.stdout.strip():
-                app_path = result.stdout.strip()
-                subprocess.Popen(app_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return f"✓ Opened {app_name}"
-        except:
-            pass
-
-        return f"✗ Could not open '{app_name}': Application not found on this system. Try installing the application or check the spelling."
     except Exception as e:
-        return f"✗ Error opening application: {str(e)}"
+        return f"✗ Error opening {app_name}: {str(e)}"
 
 open_application = smart_open_app
 
@@ -634,7 +592,7 @@ def set_volume(level) -> str:
 
         # Method 1: Direct Python ctypes approach (NO PowerShell - MOST RELIABLE)
         try:
-            from ctypes import *
+            from ctypes import windll
 
             # Load winmm.dll
             winmm = windll.winmm
