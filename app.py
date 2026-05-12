@@ -1036,9 +1036,106 @@ def web_search_with_content(query: str) -> str:
         return f"Search failed: {str(e)}"
 
 def search_and_get_top_url(query: str) -> tuple:
-    """Return Google search URL for the query (simple, reliable approach)."""
-    search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
-    return (search_url, f"Search: {query}")
+    """Try to construct the website URL or search for it."""
+    try:
+        # Strategy 1: Try common TLDs (most websites follow www.name.com pattern)
+        query_clean = query.lower().strip()
+        for tld in ['.com', '.org', '.net', '.io', '.co', '.tv', '.info']:
+            candidate_url = f"https://www.{query_clean}{tld}"
+            # Quick HEAD request to check if domain exists
+            try:
+                response = requests.head(candidate_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
+                if response.status_code < 400:
+                    return (candidate_url, query)
+            except:
+                pass
+
+        # Strategy 2: Try without www
+        for tld in ['.com', '.org', '.net', '.io', '.co', '.tv', '.info']:
+            candidate_url = f"https://{query_clean}{tld}"
+            try:
+                response = requests.head(candidate_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
+                if response.status_code < 400:
+                    return (candidate_url, query)
+            except:
+                pass
+
+        # Strategy 3: Parse Google search results as last resort
+        import urllib.parse
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
+        response = requests.get(search_url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            for link in soup.find_all('a', href=True):
+                href = link.get('href', '')
+                if href.startswith('/url?q='):
+                    raw_url = href[7:]
+                    if '&' in raw_url:
+                        raw_url = raw_url.split('&')[0]
+                    try:
+                        actual_url = urllib.parse.unquote(raw_url)
+                        if actual_url.startswith(('http://', 'https://')) and 'google' not in actual_url.lower():
+                            return (actual_url, query)
+                    except:
+                        pass
+
+        # Final fallback: Google search page
+        return (search_url, f"Search: {query}")
+    except:
+        search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
+        return (search_url, f"Search: {query}")
+
+def scrape_website_headlines(url: str) -> str:
+    """Scrape headlines and news content from a website."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Extract title
+        title = soup.title.string if soup.title else "News Feed"
+
+        # Look for headlines - prioritize h1, h2, h3 tags
+        headlines = []
+        for tag in ['h1', 'h2', 'h3', 'h4']:
+            for h in soup.find_all(tag):
+                text = h.get_text(strip=True)
+                if text and len(text) > 5 and len(text) < 200:
+                    if text not in headlines:
+                        headlines.append(text)
+                if len(headlines) >= 10:
+                    break
+            if len(headlines) >= 10:
+                break
+
+        # If no headlines found, try to extract article headlines from common news structures
+        if not headlines:
+            for article in soup.find_all(['article', 'div'], class_=re.compile(r'(headline|news|story|title|post)', re.I)):
+                h = article.find(['h1', 'h2', 'h3'])
+                if h:
+                    text = h.get_text(strip=True)
+                    if text and len(text) > 5:
+                        headlines.append(text)
+                if len(headlines) >= 10:
+                    break
+
+        # Compile result
+        if headlines:
+            result = f"📰 Headlines from {title}\n\n"
+            for i, headline in enumerate(headlines[:10], 1):
+                result += f"{i}. {headline}\n"
+            return result
+        else:
+            return f"✗ No headlines found on {url}"
+
+    except Exception:
+        return f"✗ Could not fetch headlines from the website"
 
 # ==================== AGENT CLASSES ====================
 
@@ -1135,6 +1232,20 @@ class WebAgent:
     def handle(self, command: str, session: dict) -> str:
         cmd = command.lower()
 
+        # Check for news/headlines request: "news from cnn", "headlines from bbc", etc.
+        news_pattern = re.search(r'\b(news|headlines|top news|latest news|breaking news|stories)\s+(?:from|on|about)\s+(\w+)', cmd)
+        if news_pattern:
+            site_name = news_pattern.group(2)
+            if site_name in self.SITE_MAP:
+                url = self.SITE_MAP[site_name]
+                return scrape_website_headlines(url)
+            else:
+                # Try to find the website first
+                top_url, _ = search_and_get_top_url(site_name)
+                if top_url and top_url.startswith('http'):
+                    return scrape_website_headlines(top_url)
+                return f"Could not find website for '{site_name}'"
+
         # Check for URLs/domains in command (for "open <url>" pattern)
         url_pattern = re.search(r'(https?://\S+|www\.\S+|\b[a-z0-9\-]+\.[a-z]{2,}(?:\.[a-z]{2})?(?:/\S*)?)', cmd)
 
@@ -1157,7 +1268,7 @@ class WebAgent:
             # Try to search for the unknown website and open top result
             if site:
                 top_url, title = search_and_get_top_url(site)
-                if top_url:
+                if top_url and top_url.startswith('http'):
                     open_website(top_url)
                     return f"✓ Opened: {title}\n  {top_url}"
                 return f"Could not find a website for '{site}'. Try being more specific."
