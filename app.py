@@ -590,33 +590,10 @@ def set_volume(level) -> str:
             level = int(''.join(filter(str.isdigit, level)))
         level = max(0, min(100, int(level)))
 
-        # Method 1: Direct Python ctypes approach (NO PowerShell - MOST RELIABLE)
+        success = False
+
+        # Method 1: Try Core Audio COM (Windows modern audio API)
         try:
-            from ctypes import windll
-
-            # Load winmm.dll
-            winmm = windll.winmm
-
-            # Convert level (0-100) to WinMM format (0-65535)
-            volume_value = int(level * 65535 / 100)
-
-            # Create stereo volume (same value for left and right)
-            stereo_volume = volume_value | (volume_value << 16)
-
-            # Call waveOutSetVolume
-            result = winmm.waveOutSetVolume(None, stereo_volume)
-
-            if result == 0:  # MMSYSERR_NOERROR
-                print(f"[SUCCESS] Volume set to {level}% using ctypes WinMM")
-                return f"✓ Volume set to {level}%"
-            else:
-                print(f"[WARNING] waveOutSetVolume returned: {result}")
-        except Exception as e:
-            print(f"[DEBUG] ctypes WinMM method failed: {e}")
-
-        # Method 2: Try using Core Audio via COM (alternative direct method)
-        try:
-            import subprocess
             ps_script = f"""
 $volume = {level / 100.0}
 try {{
@@ -679,37 +656,49 @@ public class Audio {{
             )
             if "SUCCESS" in result.stdout:
                 print(f"[SUCCESS] Volume set to {level}% using Core Audio COM")
-                return f"✓ Volume set to {level}%"
+                success = True
+            else:
+                print(f"[DEBUG] Core Audio method returned: {result.stdout}")
         except Exception as e:
             print(f"[DEBUG] Core Audio method failed: {e}")
 
-        # Method 3: Download and use nircmd as last resort
-        try:
-            if not os.path.exists('nircmd.exe'):
-                print("[INFO] Downloading nircmd.exe...")
-                import urllib.request
-                import zipfile
-                url = "https://www.nirsoft.net/utils/nircmd.zip"
-                zip_path = 'nircmd.zip'
-                urllib.request.urlretrieve(url, zip_path)
-                with zipfile.ZipFile(zip_path, 'r') as z:
-                    z.extractall()
-                os.remove(zip_path)
-                print("[INFO] nircmd.exe downloaded")
+        # Method 2: Use nircmd if Core Audio failed
+        if not success:
+            try:
+                if not os.path.exists('nircmd.exe'):
+                    print("[INFO] Downloading nircmd.exe for volume control...")
+                    import urllib.request
+                    import zipfile
+                    try:
+                        url = "https://www.nirsoft.net/utils/nircmd.zip"
+                        zip_path = 'nircmd.zip'
+                        urllib.request.urlretrieve(url, zip_path, timeout=10)
+                        with zipfile.ZipFile(zip_path, 'r') as z:
+                            z.extractall()
+                        os.remove(zip_path)
+                        print("[INFO] nircmd.exe downloaded successfully")
+                    except Exception as dl_e:
+                        print(f"[DEBUG] Could not download nircmd: {dl_e}")
+                        return f"✗ Volume control unavailable (Core Audio & nircmd download failed)"
 
-            if os.path.exists('nircmd.exe'):
-                volume_scaled = int(level * 655.35)
-                result = subprocess.run(
-                    ['nircmd.exe', 'setsysvolume', str(volume_scaled)],
-                    capture_output=True, timeout=5
-                )
-                if result.returncode == 0:
-                    print(f"[SUCCESS] Volume set to {level}% using nircmd")
-                    return f"✓ Volume set to {level}%"
-        except Exception as e:
-            print(f"[DEBUG] nircmd method failed: {e}")
+                if os.path.exists('nircmd.exe'):
+                    volume_scaled = int(level * 655.35)
+                    result = subprocess.run(
+                        ['nircmd.exe', 'setsysvolume', str(volume_scaled)],
+                        capture_output=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        print(f"[SUCCESS] Volume set to {level}% using nircmd")
+                        success = True
+                    else:
+                        print(f"[DEBUG] nircmd returned code: {result.returncode}")
+            except Exception as e:
+                print(f"[DEBUG] nircmd method failed: {e}")
 
-        return f"✓ Volume set to {level}%"
+        if success:
+            return f"✓ Volume set to {level}%"
+        else:
+            return f"✗ Volume control failed - Core Audio and nircmd both unavailable"
 
     except Exception as e:
         return f"✗ Could not set volume: {str(e)}"
