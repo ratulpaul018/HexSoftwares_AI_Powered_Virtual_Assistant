@@ -1036,55 +1036,58 @@ def web_search_with_content(query: str) -> str:
         return f"Search failed: {str(e)}"
 
 def search_and_get_top_url(query: str) -> tuple:
-    """Try to construct the website URL or search for it."""
+    """Search and extract website URL: try direct domains first, then Google."""
     try:
-        # Strategy 1: Try common TLDs (most websites follow www.name.com pattern)
-        query_clean = query.lower().strip()
-        for tld in ['.com', '.org', '.net', '.io', '.co', '.tv', '.info']:
-            candidate_url = f"https://www.{query_clean}{tld}"
-            # Quick HEAD request to check if domain exists
-            try:
-                response = requests.head(candidate_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
-                if response.status_code < 400:
-                    return (candidate_url, query)
-            except:
-                pass
+        query_clean = query.lower().strip().split()[0]  # Get first word only
 
-        # Strategy 2: Try without www
-        for tld in ['.com', '.org', '.net', '.io', '.co', '.tv', '.info']:
-            candidate_url = f"https://{query_clean}{tld}"
-            try:
-                response = requests.head(candidate_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=3)
-                if response.status_code < 400:
-                    return (candidate_url, query)
-            except:
-                pass
+        # Strategy 1: Try common TLDs directly (fastest, most reliable)
+        for tld in ['.com', '.org', '.io', '.net', '.co']:
+            for prefix in [f'https://www.{query_clean}', f'https://{query_clean}']:
+                url_to_try = f'{prefix}{tld}'
+                try:
+                    resp = requests.head(url_to_try, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5, allow_redirects=True)
+                    # Accept 2xx, 3xx, and even 403/404 (means site exists, is just blocking)
+                    if resp.status_code < 500:  # Not a server error = domain likely exists
+                        return (url_to_try, query)
+                except requests.exceptions.Timeout:
+                    # Site doesn't respond, try next
+                    pass
+                except:
+                    # Connection error, try next
+                    pass
 
-        # Strategy 3: Parse Google search results as last resort
+        # Strategy 2: Google search with parsing
         import urllib.parse
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
-        search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
-        response = requests.get(search_url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            for link in soup.find_all('a', href=True):
-                href = link.get('href', '')
-                if href.startswith('/url?q='):
-                    raw_url = href[7:]
-                    if '&' in raw_url:
-                        raw_url = raw_url.split('&')[0]
-                    try:
-                        actual_url = urllib.parse.unquote(raw_url)
-                        if actual_url.startswith(('http://', 'https://')) and 'google' not in actual_url.lower():
-                            return (actual_url, query)
-                    except:
-                        pass
 
-        # Final fallback: Google search page
+        search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
+        response = requests.get(search_url, headers=headers, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find first /url?q= link
+        for link in soup.find_all('a', href=True):
+            href = link['href']
+            if '/url?q=' in href:
+                try:
+                    # Extract actual URL
+                    start = href.index('/url?q=') + 7
+                    end = href.index('&', start) if '&' in href[start:] else len(href)
+                    raw_url = href[start:end]
+                    actual_url = urllib.parse.unquote(raw_url)
+
+                    # Validate
+                    if actual_url.startswith(('http://', 'https://')) and 'google' not in actual_url.lower():
+                        return (actual_url, query)
+                except:
+                    pass
+
+        # Fallback
         return (search_url, f"Search: {query}")
-    except:
+    except Exception:
         search_url = f"https://www.google.com/search?q={requests.utils.quote(query)}"
         return (search_url, f"Search: {query}")
 
@@ -1289,6 +1292,24 @@ class WebAgent:
             url_match = re.search(r'(https?://\S+|\b\w+\.\w{2,}\S*)', command)
             if url_match:
                 return scrape_website_content(url_match.group(0))
+
+        # Handle "open [something]" where something might be a website
+        if cmd.startswith('open '):
+            potential_site = cmd[5:].strip()
+            # Check if it's in SITE_MAP first
+            if potential_site in self.SITE_MAP:
+                return open_website(self.SITE_MAP[potential_site])
+            # Try fuzzy match
+            import difflib
+            close = difflib.get_close_matches(potential_site, self.SITE_MAP.keys(), n=1, cutoff=0.6)
+            if close:
+                return open_website(self.SITE_MAP[close[0]])
+            # Search Google for it
+            if potential_site and len(potential_site) > 1:
+                top_url, title = search_and_get_top_url(potential_site)
+                if top_url and top_url.startswith('http'):
+                    open_website(top_url)
+                    return f"✓ Opened: {title}\n  {top_url}"
 
         query = re.sub(
             r'\b(search|find|look up|google|web|internet|online|for|about|open|go|visit)\b',
