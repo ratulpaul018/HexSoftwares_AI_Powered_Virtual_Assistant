@@ -356,20 +356,42 @@ def open_website(url: str, get_info: bool = True) -> str:
         return f"✗ Could not open website: {str(e)}"
 
 def smart_open_app(app_name: str) -> str:
-    """Open an application using pre-built app dictionary (instant O(1) lookups)."""
+    """Open an application using pre-built app dictionary with smart fallback."""
     try:
         app_lower = app_name.lower().strip()
 
         # INSTANT DICTIONARY LOOKUP (O(1) speed)
         if app_lower in _app_dictionary:
             target = _app_dictionary[app_lower]
-            return _execute_app(target, app_name)
+            result = _execute_app(target, app_name)
+            # If dictionary path works, return success
+            if "Opened" in result:
+                return result
+            # If dictionary path failed, fall through to fuzzy match
 
         # FUZZY MATCH IN DICTIONARY (fast, milliseconds)
         close_matches = difflib.get_close_matches(app_lower, _app_dictionary.keys(), n=1, cutoff=0.75)
         if close_matches:
             target = _app_dictionary[close_matches[0]]
-            return _execute_app(target, app_name)
+            result = _execute_app(target, app_name)
+            if "Opened" in result:
+                return result
+
+        # FALLBACK: Try Windows PATH and common methods for unmatched or failed apps
+        try:
+            result = subprocess.run(['where', app_name.split()[0]], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                app_path = result.stdout.strip().split('\n')[0]
+                return _execute_app(app_path, app_name)
+        except:
+            pass
+
+        # Try opening as app name directly (Windows may know it)
+        try:
+            subprocess.Popen(f'explorer shell:appsFolder\\{app_name}', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"✓ Opened {app_name}"
+        except:
+            pass
 
         return f"✗ Could not open '{app_name}': Application not found on this system."
     except Exception as e:
@@ -390,9 +412,24 @@ def _execute_app(target: str, app_name: str) -> str:
                     return f"✓ Opened {app_name}"
                 except:
                     return f"✗ Could not open {app_name}"
+        elif target.lower().endswith('.lnk'):
+            # Handle .lnk (shortcut) files
+            try:
+                os.startfile(target)
+                return f"✓ Opened {app_name}"
+            except Exception as e:
+                return f"✗ Error opening {app_name}: {str(e)}"
         else:
-            subprocess.Popen(target, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return f"✓ Opened {app_name}"
+            # Handle exe or other executable formats
+            try:
+                # Verify path exists
+                if not os.path.exists(target):
+                    return f"✗ Path not found: {target}"
+                # Try to execute
+                subprocess.Popen(target, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return f"✓ Opened {app_name}"
+            except Exception as e:
+                return f"✗ Error opening {app_name}: {str(e)}"
     except Exception as e:
         return f"✗ Error opening {app_name}: {str(e)}"
 
