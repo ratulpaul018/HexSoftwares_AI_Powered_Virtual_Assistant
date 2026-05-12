@@ -1454,11 +1454,22 @@ class PatternRouter:
     def route(self, command: str, session: dict) -> str:
         cmd_lower = command.lower()
 
-        # FIRST: Check if WebAgent should handle this (very permissive)
-        if ('website' in cmd_lower or 'site' in cmd_lower or 'open' in cmd_lower or 'visit' in cmd_lower):
-            # Let WebAgent check if it actually wants to handle it
+        # PRIORITY 1: For "open [something]" - try AppAgent FIRST (check if it's an app)
+        if cmd_lower.startswith('open '):
+            app_result = self.app_agent.handle(command, session)
+            # If app is found (doesn't contain "not found" or "Application not found")
+            if app_result and 'not found' not in app_result.lower() and 'application not found' not in app_result.lower():
+                return app_result
+            # App not found, try WebAgent to search for website
+            web_result = self.web_agent.handle(command, session)
+            if web_result and 'Please specify' not in web_result and 'fallback' not in web_result.lower():
+                return web_result
+            # If both fail, return app agent's "not found" message (app had priority)
+            return app_result
+
+        # PRIORITY 2: Website-specific keywords get WebAgent
+        if any(keyword in cmd_lower for keyword in ['website', 'site', 'visit', 'navigate']):
             result = self.web_agent.handle(command, session)
-            # If WebAgent returned something that's not "generic fallback", use it
             if result and 'Please specify' not in result and 'fallback' not in result.lower():
                 return result
 
